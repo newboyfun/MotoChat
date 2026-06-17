@@ -1,0 +1,576 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>MotoChat Admin v13</title>
+  <link rel="stylesheet" href="/static/style.css?v=7">
+  <script src="/static/theme.js"></script>
+
+<style>
+.trait-tag { border: 2px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 13px; cursor: pointer; transition: all 0.2s; background: var(--bg); }
+.trait-tag:hover { border-color: var(--accent); }
+.trait-tag.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+</style>
+
+</head>
+<body>
+  <div id="app">
+    <!-- Splash -->
+    <div class="splash" id="splash">
+      <div class="splash-content">
+        <div class="splash-logo">
+          <div class="splash-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a4 4 0 014 4c0 2.2-1.8 4-4 4m0 0a4 4 0 01-4-4c0-2.2 1.8-4 4-4m0 0v2m0 2v12m-4-2l4 2 4-2"/>
+              <circle cx="12" cy="6" r="1.5"/>
+              <circle cx="10" cy="17" r="1" opacity="0.6"/>
+              <circle cx="14" cy="17" r="1" opacity="0.6"/>
+              <circle cx="12" cy="20" r="1" opacity="0.3"/>
+            </svg>
+          </div>
+          <h1>MotoChat</h1>
+          <p>本地网页版 AI 角色聊天</p>
+        </div>
+        <div class="splash-loader"><div class="loader-bar"></div></div>
+        <p class="splash-hint">正在加载，请稍候…</p>
+      </div>
+    </div>
+
+    <!-- Auth -->
+    <div class="auth-wrapper" id="authView" style="display:none">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a4 4 0 014 4c0 2.2-1.8 4-4 4m0 0a4 4 0 01-4-4c0-2.2 1.8-4 4-4m0 0v2m0 2v12m-4-2l4 2 4-2"/>
+              <circle cx="12" cy="6" r="1.5"/>
+              <circle cx="10" cy="17" r="1" opacity="0.6"/>
+              <circle cx="14" cy="17" r="1" opacity="0.6"/>
+              <circle cx="12" cy="20" r="1" opacity="0.3"/>
+            </svg>
+          </div>
+          <h2>MotoChat</h2>
+          <p>登录后继续使用</p>
+          <div style="margin-top:8px;font-size:12px"><a href="/user" style="color:var(--accent)">普通用户入口</a></div>
+        </div>
+        <div class="form-group"><label>账号</label><input id="authUser" class="form-input" placeholder="请输入账号"></div>
+        <div class="form-group"><label>密码</label><input id="authPass" type="password" class="form-input" placeholder="请输入密码"></div>
+        <div class="auth-actions"><a class="btn btn-primary" href="/login">去登录</a></div>
+        <div id="authError" class="cfg-status error" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="layout" id="layout" style="display:none">
+      <!-- Sidebar -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a4 4 0 014 4c0 2.2-1.8 4-4 4m0 0a4 4 0 01-4-4c0-2.2 1.8-4 4-4m0 0v2m0 2v12m-4-2l4 2 4-2"/>
+              <circle cx="12" cy="6" r="1.5"/>
+              <circle cx="10" cy="17" r="1" opacity="0.6"/>
+              <circle cx="14" cy="17" r="1" opacity="0.6"/>
+              <circle cx="12" cy="20" r="1" opacity="0.3"/>
+            </svg>
+          </div>
+          <span class="brand-name">MotoChat</span>
+        </div>
+        <nav class="nav">
+          <button class="nav-btn active" data-page="dashboard">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="3" y="15" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="8" rx="1.5"/></svg>
+            控制台
+          </button>
+          <button class="nav-btn" data-page="chat">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.4-4.03 8-9 8a9.86 9.86 0 01-4.26-1.08L3 20l1.4-3.7A7.97 7.97 0 013 12c0-4.4 4.03-8 9-8s9 3.6 9 8z"/></svg>
+            对话
+          </button>
+          <button class="nav-btn" data-page="personas">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="4"/><path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="18" cy="8" r="3"/><path d="M14 20c0-2.5 1.8-4.5 3.5-5.5"/></svg>
+            角色管理
+          </button>
+          <button class="nav-btn" data-page="users">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5" r="3"/><path d="M1 18c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="7" r="2.5"/><path d="M13 18c0-2 1.5-3.5 3-4.5"/><circle cx="19" cy="5" r="1.5"/><path d="M21 15l-5-2.5V9"/></svg>
+            用户管理
+          </button>
+          <button class="nav-btn" data-page="library">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 016.5 2H19a1 1 0 011 1v18a1 1 0 01-1 1H6.5A2.5 2.5 0 014 19.5z"/><path d="M12 6v12"/><path d="M8 8h4"/><path d="M8 11h4"/><path d="M8 14h3"/></svg>
+            性格库
+          </button>
+          <button class="nav-btn" data-page="commands">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><polyline points="8 8 12 11 8 14"/></svg>
+            指令中心
+          </button>
+          <button class="nav-btn" data-page="logs">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>
+            系统日志
+          </button>
+          <button class="nav-btn" data-page="settings">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            设置
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="persona-mini">
+            <div class="persona-mini-avatar" id="miniAvatar">M</div>
+            <div class="persona-mini-info">
+              <span class="persona-mini-name" id="miniName">MONO</span>
+              <span class="persona-mini-sub">在线</span>
+            </div>
+          </div>
+        </div>
+        <div class="sidebar-close-btn" id="sidebarCloseBtn" style="display:none">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+      </aside>
+      <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+      <!-- Main Content -->
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar-left">
+            <button class="btn-icon" id="menuBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            </button>
+            <h2 id="pageTitle">控制台</h2>
+          </div>
+          <div class="topbar-right">
+            <button class="theme-toggle" id="themeToggle" title="切换主题" aria-label="切换深色/浅色模式">
+              <svg id="themeIconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              <svg id="themeIconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="display:none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+            </button>
+            <span id="greeting" class="greeting-text"></span>
+            <button class="btn" id="logoutBtn" style="display:none;margin-left:8px">退出</button>
+            <span class="cfg-status" id="wsStatus">● 未连接</span>
+          </div>
+        </header>
+
+        <!-- ==================== Dashboard ==================== -->
+        <section class="page active" id="page-dashboard">
+          <div style="padding:24px;display:flex;flex-direction:column;gap:20px">
+            <!-- Welcome Banner -->
+            <div class="welcome-banner">
+              <div class="welcome-banner-top">
+                <div class="welcome-banner-avatar" style="width:56px;height:56px;font-size:24px">M</div>
+                <div class="welcome-banner-info">
+                  <div class="welcome-banner-title">MotoChat 控制台</div>
+                  <div class="welcome-banner-sub">服务器运行中 · <span id="statUptime">00:00</span> · API <span id="statKey" style="font-weight:600">未配置</span></div>
+                  <div class="welcome-banner-actions">
+                    <button class="btn btn-primary" onclick="goToChat()">开始聊天</button>
+                    <button class="btn" onclick="goToPage('settings')">系统设置</button>
+                  </div>
+                </div>
+              </div>
+              <div class="welcome-banner-stats">
+                <div class="stat-card">
+                  <div class="stat-label">消息数</div>
+                  <div class="stat-value" id="statMsg">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">角色数</div>
+                  <div class="stat-value" id="statPersona">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">Token 用量</div>
+                  <div class="stat-value" id="dashTokenTotal" style="font-size:20px">0</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-label">用户数</div>
+                  <div class="stat-value" id="statUsers">-</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-action-grid">
+              <button class="quick-action" onclick="goToChat()">
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.4-4.03 8-9 8a9.86 9.86 0 01-4.26-1.08L3 20l1.4-3.7A7.97 7.97 0 013 12c0-4.4 4.03-8 9-8s9 3.6 9 8z"/></svg></div>
+                <div class="quick-action-title">进入对话</div>
+                <div class="quick-action-desc">与AI角色聊天</div>
+              </button>
+              <button class="quick-action" onclick="goToPage('personas')">
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="4"/><path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg></div>
+                <div class="quick-action-title">角色管理</div>
+                <div class="quick-action-desc">创建与编辑角色</div>
+              </button>
+              <button class="quick-action" onclick="goToPage('users')">
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5" r="3"/><path d="M1 18c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="7" r="2.5"/><path d="M13 18c0-2 1.5-3.5 3-4.5"/></svg></div>
+                <div class="quick-action-title">用户管理</div>
+                <div class="quick-action-desc">账号与权限设置</div>
+              </button>
+              <button class="quick-action" onclick="goToPage('commands')">
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+                <div class="quick-action-title">指令中心</div>
+                <div class="quick-action-desc">快捷命令集合</div>
+              </button>
+              <button class="quick-action" onclick="goToPage('logs')">
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg></div>
+                <div class="quick-action-title">系统日志</div>
+                <div class="quick-action-desc">运行状态追踪</div>
+              </button>
+              <button class="quick-action" onclick="goToPage('settings')">
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div>
+                <div class="quick-action-title">系统设置</div>
+                <div class="quick-action-desc">配置与参数</div>
+              </button>
+            </div>
+
+            <!-- Two columns: Feed + Users -->
+            <div class="dash-row">
+              <div class="dash-card">
+                <h3>最近动态</h3>
+                <div class="feed-list" id="dashFeed">
+                  <div class="loading-text">加载中…</div>
+                </div>
+              </div>
+              <div class="dash-card admin-only">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                  <h3 style="margin:0">用户概览</h3>
+                  <button class="btn btn-primary" onclick="goToPage('users')" style="font-size:12px">完整管理</button>
+                </div>
+                <div id="adminUsersContainer"><div class="loading-text">加载中…</div></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== Chat ==================== -->
+        <section class="page" id="page-chat">
+          <div class="chat-container">
+            <div class="chat-header">
+              <div class="chat-header-left">
+                <div class="chat-avatar" id="chatAvatar">M</div>
+                <div>
+                  <div class="chat-name" id="chatName">MONO</div>
+                  <div class="chat-sub">在线</div>
+                </div>
+              </div>
+              <div class="chat-header-right">
+                <div class="token-inline">
+                  <span class="token-label">Token</span>
+                  <span class="token-val" id="chatTokenDisplay">-</span>
+                </div>
+              </div>
+            </div>
+            <div class="chat-messages" id="chatMessages">
+              <div class="chat-welcome" id="msgWelcome">
+                <div class="chat-welcome-avatar" id="welcomeAvatar">M</div>
+                <h3>你好！我是 <span id="welcomeName">MONO</span></h3>
+                <p>有什么想聊的吗？</p>
+                <div class="chat-welcome-suggestions">
+                  <button class="chat-welcome-suggestion" onclick="sendQuick('聊聊天吧')">聊聊天吧</button>
+                  <button class="chat-welcome-suggestion" onclick="sendQuick('讲个故事')">讲个故事</button>
+                  <button class="chat-welcome-suggestion" onclick="sendQuick('今天天气怎么样')">问问天气</button>
+                </div>
+              </div>
+            </div>
+            <div class="chat-input-wrap">
+              <input type="file" id="imageInput" accept="image/*" hidden>
+              <button class="btn-icon attach-btn" id="attachBtn" title="发送图片">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              <textarea id="msgInput" placeholder="输入消息…" rows="1"></textarea>
+              <button class="btn-icon send-btn" id="sendBtn" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 5-10 5V7z"/><rect x="3" y="13" width="4" height="3"/></svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== Personas ==================== -->
+        <section class="page" id="page-personas">
+          <div class="personas-toolbar">
+            <button class="btn btn-primary" onclick="createPersona()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              创建角色
+            </button>
+            <button class="btn" onclick="openAIGenerate()" style="margin-left:8px">
+              ✨ AI 生成性格
+            </button>
+          </div>
+          <div class="personas-grid" id="personasGrid">
+            <div class="loading-text">加载中…</div>
+          </div>
+        </section>
+
+        <!-- ==================== Commands ==================== -->
+        <section class="page" id="page-commands">
+          <div class="setting-card">
+            <div class="setting-title">指令中心</div>
+            <div class="setting-form">
+              <p style="color:var(--text-2);margin-bottom:16px;">点击卡片向当前会话发送指令，自动跳转到对话页查看结果。</p>
+              <div class="commands-grid">
+                <div class="cmd-card" onclick="sendCommand('/help')">
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><path d="M9 9a3 3 0 115.12 2.12c-.6.6-1.12.88-1.12 1.88v.5"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+                  <h4>帮助</h4><p>查看可用指令列表</p>
+                </div>
+                <div class="cmd-card" onclick="sendCommand('/diary')">
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+                  <h4>角色日记</h4><p>让角色写一篇日记</p>
+                </div>
+                <div class="cmd-card" onclick="sendCommand('/state')">
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg></div>
+                  <h4>角色状态</h4><p>查看角色当前状态</p>
+                </div>
+                <div class="cmd-card" onclick="sendCommand('/list')">
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+                  <h4>备忘录</h4><p>让角色写一份备忘录</p>
+                </div>
+                <div class="cmd-card" onclick="sendCommand('/mem')">
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></div>
+                  <h4>查看记忆</h4><p>查看角色的核心记忆</p>
+                </div>
+                <div class="cmd-card" onclick="sendCommand('/clear')">
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></div>
+                  <h4>清空核心记忆</h4><p>清空角色的核心记忆</p>
+                </div>
+                <div class="cmd-card" onclick="sendCommand('/gen_core_mem')">
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg></div>
+                  <h4>生成核心记忆</h4><p>手动生成角色核心记忆</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== Logs ==================== -->
+        <section class="page" id="page-logs">
+          <div class="setting-card">
+            <div class="setting-title" style="display:flex;justify-content:space-between;align-items:center;">
+              系统日志
+              <div style="display:flex;gap:8px;">
+                <select id="logLevelFilter" class="form-input" style="width:auto;padding:6px 10px;font-size:12px;" onchange="refreshLogs()">
+                  <option value="all">全部</option>
+                  <option value="info">INFO</option>
+                  <option value="warning">WARN</option>
+                  <option value="error">ERROR</option>
+                  <option value="debug">DEBUG</option>
+                </select>
+                <button class="btn btn-sm" onclick="refreshLogs()">刷新</button>
+                <button class="btn btn-sm" onclick="clearLogs()">清空</button>
+              </div>
+            </div>
+            <div class="log-container" id="logsContainer">
+              <div class="loading-text">加载中…</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== Settings ==================== -->
+        <section class="page" id="page-settings">
+          <div class="settings-grid">
+            <!-- LLM API Card -->
+            <div class="setting-card">
+              <div class="setting-title">LLM API</div>
+              <div class="setting-form">
+                <div class="form-group">
+                  <label>API Key</label>
+                  <div class="key-display">
+                    <span class="key-masked" id="apiKeyMasked">未配置</span>
+                    <button class="btn btn-sm" onclick="revealApiKey()">修改</button>
+                  </div>
+                  <div id="apiKeyEdit" style="display:none;margin-top:12px">
+                    <div class="form-group">
+                      <label>输入管理密码验证</label>
+                      <div class="input-with-btn">
+                        <input type="password" id="keyVerifyPw" class="form-input" placeholder="管理密码">
+                        <button class="btn btn-sm" onclick="verifyKeyAccess()">验证</button>
+                      </div>
+                      <span id="keyVerifyStatus" class="cfg-status"></span>
+                    </div>
+                    <div id="keyInputRow" style="display:none">
+                      <div class="form-group"><label>API Key</label><div class="input-with-btn"><input type="password" id="cfgApiKey" class="form-input" placeholder="sk-..."><button class="btn btn-sm" onclick="toggleKeyVis()">显示</button></div></div>
+                      <button class="btn btn-sm" onclick="hideKeyEdit()" style="margin-top:4px">取消</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="form-group"><label>API 地址</label><input type="text" id="cfgBaseUrl" class="form-input"></div>
+                <div class="form-group"><label>模型</label><input type="text" id="cfgModel" class="form-input"></div>
+                <div class="form-group"><label>温度 (0-2)</label><input type="number" id="cfgTemp" class="form-input" step="0.1" min="0" max="2"></div>
+                <div class="form-group"><label>最大 Token</label><input type="number" id="cfgMaxTokens" class="form-input"></div>
+                <div class="form-group"><label>上下文轮数</label><input type="number" id="cfgContextRounds" class="form-input"></div>
+                <button class="btn btn-primary" onclick="saveConfig()" style="margin-top:12px">保存配置</button>
+                <span id="cfgStatus" class="cfg-status"></span>
+              </div>
+            </div>
+
+            <!-- Vision API Card -->
+            <div class="setting-card">
+              <div class="setting-title">视觉 API</div>
+              <div class="setting-form">
+                <div class="form-group"><label>视觉 API Key</label><input type="password" id="cfgVisionKey" class="form-input"></div>
+                <div class="form-group"><label>视觉 API 地址</label><input type="text" id="cfgVisionBaseUrl" class="form-input" placeholder="https://api.openai.com/v1"></div>
+                <div class="form-group"><label>视觉模型</label><input type="text" id="cfgVisionModel" class="form-input"></div>
+                <button class="btn btn-primary" onclick="saveVisionConfig()">保存视觉配置</button>
+                <span id="cfgVisionStatus" class="cfg-status"></span>
+              </div>
+            </div>
+
+            <!-- TTS API Card -->
+            <div class="setting-card">
+              <div class="setting-title">语音 API</div>
+              <div class="setting-form">
+                <div class="form-group"><label>语音 API Key</label><input type="password" id="cfgTtsKey" class="form-input"></div>
+                <div class="form-group"><label>语音 API 地址</label><input type="text" id="cfgTtsBaseUrl" class="form-input" placeholder="https://api.openai.com/v1"></div>
+                <div class="form-group"><label>TTS 模型 ID</label><input type="text" id="cfgTtsModelId" class="form-input"></div>
+                <button class="btn btn-primary" onclick="saveTtsConfig()">保存语音配置</button>
+                <span id="cfgTtsStatus" class="cfg-status"></span>
+              </div>
+            </div>
+
+            <!-- Admin Password Card -->
+            <div class="setting-card">
+              <div class="setting-title">管理密码</div>
+              <div class="setting-form">
+                <div class="form-group"><label>原密码</label><input type="password" id="oldPw" class="form-input"></div>
+                <div class="form-group"><label>新密码</label><input type="password" id="newPw" class="form-input"></div>
+                <button class="btn btn-primary" onclick="changeAdminPw()">修改密码</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      
+        <!-- Admin Users Page -->
+        <section class="page" id="page-users">
+          <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <div>
+                <h3 style="margin:0;font-size:18px">用户管理</h3>
+                <p style="margin:4px 0 0;color:var(--text-muted);font-size:13px">管理所有用户账号、角色分配和权限</p>
+              </div>
+              <button class="btn btn-primary" onclick="showCreateUser()">+ 新建用户</button>
+            </div>
+            <div id="adminUsersList" class="user-card-list"></div>
+
+            <!-- User Detail Modal -->
+            <div class="glass-overlay" id="userDetailModal" style="display:none">
+              <div class="glass-panel" id="userDetailPanel">
+                <div class="glass-panel-header">
+                  <h3 id="userDetailTitle">用户详情</h3>
+                  <button class="glass-panel-close" onclick="closeUserDetail()">✕</button>
+                </div>
+                <div id="userDetailContent"></div>
+              </div>
+            </div>
+
+            <!-- Create User Modal -->
+            <div class="glass-overlay" id="createUserModal" style="display:none">
+              <div class="glass-panel glass-panel-sm">
+                <div class="glass-panel-header">
+                  <h3>新建用户</h3>
+                  <button class="glass-panel-close" onclick="closeCreateUser()">✕</button>
+                </div>
+                <div class="form-group"><label>用户名</label><input id="newUsername" class="form-input" placeholder="输入用户名"></div>
+                <div class="form-group"><label>密码</label><input id="newPassword" class="form-input" type="password" placeholder="输入密码"></div>
+                <div class="form-group"><label>默认角色</label><select id="newUserPersona" class="form-input"></select></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px">
+                  <button class="btn" onclick="closeCreateUser()">取消</button>
+                  <button class="btn btn-primary" onclick="doCreateUser()">创建用户</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Persona Library Page -->
+        <section class="page" id="page-library">
+          <div style="padding:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+              <h3 style="margin:0">性格模板库</h3>
+              <button class="btn btn-primary" onclick="showAddLibraryItem()">+ 新建模板</button>
+            </div>
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">公开的性格模板会显示给所有用户，用户可以选择应用到自己的角色上。</p>
+            <div id="personaLibraryList"></div>
+            <div class="glass-overlay" id="libraryEditModal" style="display:none">
+              <div class="glass-panel">
+                <div class="glass-panel-header">
+                  <h3 id="libraryEditTitle">编辑性格模板</h3>
+                  <button class="glass-panel-close" onclick="closeLibraryEdit()">✕</button>
+                </div>
+                <div class="form-group"><label>模板名称</label><input id="libEditName" class="form-input" placeholder="如：温柔治愈系"></div>
+                <div class="form-group"><label>关联角色（可选）</label><select id="libEditPersona" class="form-input"><option value="">不关联</option></select></div>
+                <div class="form-group"><label>性格内容</label><textarea id="libEditContent" class="form-input" rows="8" placeholder="角色性格设定..."></textarea></div>
+                <div class="form-group"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="libEditPublic" checked> 公开（用户可见）</label></div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+                  <button class="btn" onclick="closeLibraryEdit()">取消</button>
+                  <button class="btn btn-primary" onclick="doSaveLibraryItem()">保存</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+</main>
+    </div>
+
+    <!-- Persona Edit Modal -->
+    <div class="modal" id="personaModal" style="display:none">
+      <div class="modal-card">
+        <div class="modal-title" id="modalTitle">编辑角色</div>
+        <div class="form-group"><label>角色名称</label><input id="editPersonaName" class="form-input"></div>
+        <div class="form-group"><label>角色设定</label><textarea id="editPersonaContent" class="form-input" rows="8"></textarea></div>
+        <div class="modal-actions">
+          <button class="btn" onclick="hidePersonaModal()">取消</button>
+          <button class="btn btn-primary" onclick="savePersona()">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toasts" class="toast-container"></div>
+  </div>
+
+  
+    <!-- AI 生成性格弹窗 -->
+    <div class="glass-overlay" id="aiGenModal" style="display:none">
+      <div class="glass-panel">
+        <div class="glass-panel-header">
+          <h3>✨ AI 生成性格</h3>
+          <button class="glass-panel-close" onclick="closeAIGenerate()">✕</button>
+        </div>
+        <div style="margin-bottom:16px">
+          <div style="font-weight:600;margin-bottom:8px">选择性格特征（可多选）</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px">
+            <button class="trait-tag btn" data-trait="温柔" onclick="toggleTrait(this)">🌸 温柔</button>
+            <button class="trait-tag btn" data-trait="活泼" onclick="toggleTrait(this)">⚡ 活泼</button>
+            <button class="trait-tag btn" data-trait="高冷" onclick="toggleTrait(this)">❄️ 高冷</button>
+            <button class="trait-tag btn" data-trait="幽默" onclick="toggleTrait(this)">😄 幽默</button>
+            <button class="trait-tag btn" data-trait="知性" onclick="toggleTrait(this)">📚 知性</button>
+            <button class="trait-tag btn" data-trait="元气" onclick="toggleTrait(this)">☀️ 元气</button>
+            <button class="trait-tag btn" data-trait="毒舌" onclick="toggleTrait(this)">🗡️ 毒舌</button>
+            <button class="trait-tag btn" data-trait="呆萌" onclick="toggleTrait(this)">🐰 呆萌</button>
+            <button class="trait-tag btn" data-trait="御姐" onclick="toggleTrait(this)">👑 御姐</button>
+            <button class="trait-tag btn" data-trait="正经" onclick="toggleTrait(this)">📋 正经</button>
+            <button class="trait-tag btn" data-trait="话痨" onclick="toggleTrait(this)">💬 话痨</button>
+            <button class="trait-tag btn" data-trait="安静" onclick="toggleTrait(this)">🤫 安静</button>
+            <button class="trait-tag btn" data-trait="傲娇" onclick="toggleTrait(this)">😤 傲娇</button>
+            <button class="trait-tag btn" data-trait="天然呆" onclick="toggleTrait(this)">😵 天然呆</button>
+            <button class="trait-tag btn" data-trait="腹黑" onclick="toggleTrait(this)">😈 腹黑</button>
+            <button class="trait-tag btn" data-trait="中二" onclick="toggleTrait(this)">⚡ 中二</button>
+            <button class="trait-tag btn" data-trait="社恐" onclick="toggleTrait(this)">🙈 社恐</button>
+            <button class="trait-tag btn" data-trait="治愈" onclick="toggleTrait(this)">💛 治愈</button>
+          </div>
+        </div>
+        <div style="margin-bottom:16px">
+          <div style="font-weight:600;margin-bottom:8px">额外描述（可选）</div>
+          <textarea id="aiGenHint" class="form-input" rows="2" placeholder="比如：喜欢猫、爱用颜文字..."></textarea>
+        </div>
+        <button class="btn btn-primary" id="aiGenBtn" onclick="doGeneratePersonality()" style="width:100%">✨ 开始生成</button>
+        <textarea id="aiGenResult" class="form-input" rows="6" style="display:none;margin-top:12px"></textarea>
+        <button class="btn btn-primary" onclick="applyAIPersonality()" style="display:none;width:100%;margin-top:8px" id="applyAIBtn">应用此性格</button>
+      </div>
+    </div>
+
+  <script src="/static/app-v16.js"></script>
+
+    </body>
+</html>
+
+
+
+
+
+
+
