@@ -1,7 +1,55 @@
-﻿__pycache__/
-*.pyc
-.env
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
 .venv/
-config/
+env/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ===== 配置（含 API Key / 密码 / secret，绝对不要提交）=====
+# 忽略 config/ 下全部内容，仅保留目录占位
+config/*
+!config/.gitkeep
+.env
+.env.*
+!.env.example
+# 任何位置的配置备份都不提交（曾因只忽略 config.json 而漏掉 .bak 导致密钥泄露）
+*.bak
+*.before-cleanup
+
+# ===== 用户数据（聊天记录 / 数据库 / 记忆 / 语音 / 自建角色）=====
+# 整个 userdata/ 都是运行时数据：首次启动会从 src/data/avatars/ 自动初始化
+# 内置角色（MONO / SAGE），因此仓库无需携带，也避免上传私人聊天记录
 userdata/
+
+# ===== 工作区本地状态（会话记忆 / 助手笔记，与项目代码无关）=====
+.workbuddy/
+
+# ===== 日志 =====
 logs/
+*.log
+
+# ===== 临时 / 备份 / 生成物 =====
+backup-*/
+outputs/
+.backup/
+*.tmp
+*.temp
+dist/
+build/
+
+# ===== IDE / 编辑器 =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db
+desktop.ini

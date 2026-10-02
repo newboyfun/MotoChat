@@ -10,35 +10,28 @@ LOCK_PORT = 19876
 _lock_socket = None
 
 
-def _kill_existing_instance():
-    import subprocess
-    try:
-        out = subprocess.check_output(
-            ["powershell", "-NoProfile", "-Command",
-             f"Get-NetTCPConnection -LocalPort {LOCK_PORT} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"],
-            text=True
-        )
-        pids = list(dict.fromkeys([x.strip() for x in out.splitlines() if x.strip().isdigit()]))
-        for pid in pids:
-            try:
-                subprocess.run(["taskkill", "/PID", pid, "/F"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
 def _acquire_lock():
     global _lock_socket
+    s = None
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+        # Windows 使用 SO_EXCLUSIVEADDRUSE 确保独占绑定，其他平台使用 SO_REUSEADDR
+        if sys.platform == 'win32':
+            SO_EXCLUSIVE = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
+            if SO_EXCLUSIVE is not None:
+                s.setsockopt(socket.SOL_SOCKET, SO_EXCLUSIVE, 1)
+            else:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        else:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(("127.0.0.1", LOCK_PORT))
         s.listen(1)
         _lock_socket = s
         return True
     except OSError:
         try:
-            s.close()
+            if s is not None:
+                s.close()
         except Exception:
             pass
         return False
@@ -93,17 +86,15 @@ def main():
         signal.signal(signal.SIGBREAK, _signal_handler)
 
     if not _acquire_lock():
-        print("  [!] 检测到旧进程占用端口，正在自动清理后重试...")
-        _kill_existing_instance()
-        if not _acquire_lock():
-            print("  [X] 仍然无法获取启动端口，请手动检查占用情况")
-            sys.exit(1)
+        print("  [!] 检测到已有实例在运行 (端口 19876)，请先关闭后重试")
+        print("  [!] 如果确认无实例运行，请检查端口占用: netstat -ano | findstr 19876")
+        sys.exit(1)
     atexit.register(_release_lock)
 
     import uvicorn
     try:
-        from data.config import Config
-        config = Config(config_dir=CONFIG_DIR)
+        from data.config import get_config
+        config = get_config(config_dir=CONFIG_DIR)
     except Exception as e:
         print(f"  [X] 配置加载失败: {e}")
         sys.exit(1)
@@ -118,7 +109,7 @@ def main():
     from app.server import app, inject, broadcast, add_log
 
     print("=" * 56)
-    print("   MotoChat v2.0")
+    print("   MotoChat v1.0")
     print("=" * 56)
 
     init_db(db_dir=os.path.join(DATA_ROOT, "database"))
@@ -131,7 +122,7 @@ def main():
         temperature=config.llm.temperature, max_context_rounds=config.llm.max_context_rounds,
         auto_model_switch=config.llm.auto_model_switch)
 
-    memory = MemoryService(root_dir=DATA_ROOT, llm_service=llm, max_groups=config.llm.max_context_rounds)
+    memory = MemoryService(root_dir=DATA_ROOT, llm_service=llm, max_groups=config.llm.max_context_rounds, src_root=SRC_ROOT)
 
     vision = VisionService(
         api_key=config.vision.api_key or config.llm.api_key,
@@ -152,7 +143,8 @@ def main():
     add_log("info", "系统启动完成")
     add_log("info", f"默认角色: {chat.avatar_name}")
 
-    autosend.start()
+    # autosend.start() 已移至 server.py 的 lifespan 中，与 set_event_loop 一起调用
+    # 确保时序上完全确定：先设置 event loop，再启动 autosend
 
     host = config.web.host
     port = config.web.port
@@ -160,7 +152,7 @@ def main():
     print()
 
     try:
-        uvicorn.run(app, host=host, port=port, log_level="debug", access_log=True)
+        uvicorn.run(app, host=host, port=port, log_level="info", access_log=True)
     finally:
         _release_lock()
 

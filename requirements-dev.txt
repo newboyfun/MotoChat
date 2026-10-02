@@ -1,0 +1,6 @@
+# 开发/测试依赖
+# 安装：.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=8.0.0
+requests>=2.28.0             # smoke_test.py / regression_test.py 发 HTTP 请求

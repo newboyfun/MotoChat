@@ -1,10 +1,17 @@
-﻿fastapi>=0.104.0
-uvicorn
-python-multipart>=0.0.6
-openai>=1.0.0
-requests>=2.28.0
+﻿# 运行依赖（MotoChat 本体）
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6      # FastAPI 处理文件上传（头像/图片）必需
+pydantic>=2.0.0
 SQLAlchemy>=2.0.0
+
+# LLM / 图片识别（OpenAI 兼容 API）
+openai>=1.0.0
+httpx>=0.25.0
+
+# 头像图片重编码（Pillow）
+pillow>=10.0.0
+
+# 语音合成（可选：未安装则自动跳过 TTS，不影响聊天）
+fish-audio-sdk
 emoji>=2.10.0
-
-fish_audio_sdk
-

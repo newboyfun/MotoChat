@@ -19,8 +19,8 @@ if not exist ".venv\Scripts\activate.bat" (
 
 call .venv\Scripts\activate.bat
 if not exist ".venv\.deps_installed" (
-    echo [INFO] Installing dependencies...
-    .venv\Scripts\python.exe -m pip install fastapi uvicorn python-multipart openai requests SQLAlchemy emoji --quiet --disable-pip-version-check
+    echo [INFO] Installing dependencies from requirements.txt...
+    .venv\Scripts\python.exe -m pip install -r requirements.txt --quiet --disable-pip-version-check
     if not errorlevel 1 (
         echo installed > ".venv\.deps_installed"
     )

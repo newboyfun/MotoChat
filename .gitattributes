@@ -1,0 +1,19 @@
+# 统一换行符处理：仓库内一律存 LF，检出到 Windows 时由 Git 自动转 CRLF
+* text=auto eol=lf
+
+# Windows 批处理保留 CRLF，否则 cmd 解析可能出错
+*.bat text eol=crlf
+
+# 二进制文件不做换行符转换
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.ico binary
+*.gif binary
+*.db binary
+*.pyc binary
+
+# 语言统计（让 GitHub 正确识别为 Python 项目）
+*.py linguist-language=Python
+*.js linguist-language=JavaScript
+*.css linguist-language=CSS

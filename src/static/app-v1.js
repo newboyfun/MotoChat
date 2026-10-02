@@ -1,15 +1,3 @@
-(function() {
-  const origFetch = window.fetch;
-  window.fetch = function(input, init) {
-    init = init || {};
-    init.headers = Object.assign({}, init.headers || {});
-    const token = localStorage.getItem('kc_token');
-    if (token && !init.headers['Authorization'] && !init.headers['authorization']) {
-      init.headers['Authorization'] = 'Bearer ' + token;
-    }
-    return origFetch(input, init);
-  };
-})();
 /* MotoChat - 主应用逻辑 v3 (REST + SSE, no WebSocket) */
 (function() {
   'use strict';
@@ -26,7 +14,7 @@
   document.addEventListener('DOMContentLoaded', async function() {
     $$('.nav-btn[data-page]').forEach(function(btn) { btn.addEventListener('click', function() { goToPage(btn.dataset.page); }); });
     bindChat();
-    bindAuth(); bindLogout();
+    bindLogout();
     bindTheme();
     bindSidebar();
     startUptime();
@@ -54,13 +42,43 @@
       if (ly) ly.style.display = 'flex';
       await loadAll();
       checkConnection();
-      if (S.role === 'user') goToPage('chat');
+      initNotifyWs();
     } catch(e) {
       console.error('init error:', e);
       hideSplash();
       location.href='/login';
     }
   });
+
+  /* ===== 通知 WebSocket：消费提醒/自动消息广播 ===== */
+  let _notifyWsRetry = 5000;
+  function initNotifyWs() {
+    try {
+      const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+      const ws = new WebSocket(proto + location.host + '/ws/chat');
+      let pingTimer = null;
+      ws.onopen = () => {
+        _notifyWsRetry = 5000;
+        // 心跳保活，防代理/空闲断连
+        pingTimer = setInterval(() => { try { ws.send(JSON.stringify({type:'ping'})); } catch(e) {} }, 30000);
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type !== 'notification') return;  // 聊天走 SSE，这里只消费通知广播
+          toast(msg.title || '通知', msg.content || '', 'info');
+          if (S.page === 'chat') loadHistory();
+        } catch(e) {}
+      };
+      ws.onclose = (ev) => {
+        if (pingTimer) clearInterval(pingTimer);
+        if (ev.code === 4001) return;  // 未登录/已登出，不重连
+        setTimeout(initNotifyWs, _notifyWsRetry);
+        _notifyWsRetry = Math.min(_notifyWsRetry * 2, 60000);
+      };
+      ws.onerror = () => { try { ws.close(); } catch(e) {} };
+    } catch(e) { /* WebSocket 不可用时静默降级 */ }
+  }
 
   function showAuth() {
     const auth = document.getElementById('authView');
@@ -71,8 +89,7 @@
 
   async function apiAuthMe() {
     try {
-      const token = localStorage.getItem('kc_token');
-      if (!token) return null;
+      // 认证走 HttpOnly Cookie，直接询问后端即可
       const r = await fetch('/api/auth/me');
       if (!r.ok) return null;
       return await r.json();
@@ -100,7 +117,6 @@
     $$('.admin-only').forEach(el => { el.style.display = S.role === 'admin' ? '' : 'none'; });
   }
 
-  function bindAuth() {}
   /* ===== THEME ===== */
   function bindTheme() {
     const btn = document.getElementById('themeToggle');
@@ -131,19 +147,25 @@
     if (moon) moon.style.display = isDark ? '' : 'none';
   }
   /* ===== CONNECTION CHECK ===== */
+  let _connTimer = null;
   async function checkConnection() {
     try {
       const r = await fetch('/api/stats', {signal: AbortSignal.timeout(3000)});
-      if (r.ok) {
-        updateStatus(true);
-      } else {
-        updateStatus(false);
-      }
+      updateStatus(r.ok);
     } catch(e) {
       updateStatus(false);
     }
-    setTimeout(checkConnection, 10000);
+    if (!document.hidden) {
+      _connTimer = setTimeout(checkConnection, 10000);
+    }
   }
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      if (_connTimer) { clearTimeout(_connTimer); _connTimer = null; }
+    } else {
+      if (!_connTimer) checkConnection();
+    }
+  });
 
   function updateStatus(connected) {
     const el = $('#wsStatus');
@@ -154,14 +176,8 @@
     } else {
       el.textContent = '● 未连接';
       el.style.color = 'var(--red)';
-    } /* ===== NAV ===== */
+    }
   }
-  function bindNav() {
-    $$('.nav-btn[data-page]').forEach(btn => {
-      btn.addEventListener('click', () => goToPage(btn.dataset.page));
-    });
-  }
-  window._initBindNav = bindNav;
 
   window.goToPage = function(page) {
     S.page = page;
@@ -174,7 +190,7 @@
     $('#sidebar').classList.remove('open');
     const overlay = document.getElementById('sidebarOverlay');
     if (overlay) overlay.classList.remove('open');
-    if (page === 'chat') setTimeout(() => { const el = $('#msgInput'); if (el) el.focus(); scrollChat(); }, 100);
+    if (page === 'chat') { loadHistory(); setTimeout(() => { const el = $('#msgInput'); if (el) el.focus(); scrollChat(); }, 200); }
     if (page === 'logs') refreshLogs();
     if (page === 'personas') loadPersonas();
     if (page === 'users') loadAdminUsers();
@@ -245,22 +261,51 @@
     const bubble = addMsg('assistant', '');
     S.currentBubble = bubble;
     S.fullReply = '';
+    // SSE 批量渲染：每 token 只更新状态，50ms 节流一次真正写 DOM，避免每 token 重建 innerHTML 引发 reflow 风暴
+    let _renderTimer = null, _renderDirty = false;
+    function _scheduleRender() {
+      _renderDirty = true;
+      if (_renderTimer) return;
+      _renderTimer = setTimeout(() => {
+        _renderTimer = null;
+        if (!_renderDirty) return;
+        _renderDirty = false;
+        if (S.currentBubble) S.currentBubble.innerHTML = renderEmotions(escapeHtml(S.fullReply));
+        scrollChat();
+      }, 50);
+    }
+    function _flushRender() {  // 流结束前强制刷一次，保证最后内容完整
+      if (_renderTimer) { clearTimeout(_renderTimer); _renderTimer = null; }
+      if (_renderDirty) {
+        _renderDirty = false;
+        if (S.currentBubble) S.currentBubble.innerHTML = renderEmotions(escapeHtml(S.fullReply));
+        scrollChat();
+      }
+    }
     try {
       const resp = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, conversation_id: S.cid })
       });
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => '未知错误');
+        let errMsg = '服务器错误 (' + resp.status + ')';
+        try { const ej = JSON.parse(errText); errMsg = ej.error || ej.message || errMsg; } catch(e) {}
+        if (S.currentBubble) S.currentBubble.innerHTML = '<span style="color:var(--red)">✗ ' + escapeHtml(errMsg) + '</span>';
+        finishReply();
+        return;
+      }
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let eventType = '';  // 跨 chunk 保留事件类型，防止 event 行与 data 行被拆到不同 chunk
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop();
-        let eventType = '';
         for (const line of lines) {
           if (line.startsWith('event: ')) { eventType = line.substring(7).trim(); continue; }
           if (line.startsWith('data: ')) {
@@ -270,23 +315,59 @@
               const parsed = JSON.parse(rawData);
               if (eventType === 'chunk' && parsed.text) {
                 S.fullReply += parsed.text;
-                if (S.currentBubble) S.currentBubble.innerHTML = renderEmotions(escapeHtml(S.fullReply));
-                scrollChat();
+                _scheduleRender();  // 批量渲染：50ms 节流，替代每 token 全量 innerHTML
               } else if (eventType === 'error') {
-                if (S.currentBubble) S.currentBubble.innerHTML = '<span style="color:var(--red)">\u2717 ' + escapeHtml(parsed.error || '\u5904\u7406\u51fa\u9519') + '</span>';
+                if (S.currentBubble) S.currentBubble.innerHTML = '<span style="color:var(--red)">✗ ' + escapeHtml(parsed.error || '处理出错') + '</span>';
               }
-            } catch(e) {}
+            } catch(e) { console.warn('[SSE] JSON parse failed:', rawData, e); }
           }
         }
       }
     } catch(e) {
-      if (S.currentBubble) S.currentBubble.innerHTML = '<span style="color:var(--red)">发送失败: ' + escapeHtml(e.message) + '</span>';
+      console.error('[SSE] Error:', e);
+      // 阻止 _flushRender 覆盖下面的错误提示（它会把气泡重建成半截回复）
+      _renderDirty = false;
+      let fatal = false;
+      // 检查是否是认证问题
+      if (e.name === 'TypeError' || e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+        try {
+          const me = await apiAuthMe();
+          if (!me || !me.username) {
+            // 登录已失效，清除并跳转登录
+            localStorage.removeItem('kc_token');
+            fatal = true;
+            if (S.currentBubble) S.currentBubble.innerHTML = '<span style="color:var(--red)">登录已过期，请重新登录</span>';
+            setTimeout(() => { location.href = '/login'; }, 1500);
+          }
+        } catch(authErr) {
+          // 鉴权检测失败：留在当前页，给出可重试的提示
+          localStorage.removeItem('kc_token');
+          if (S.currentBubble) S.currentBubble.innerHTML =
+            '<span style="color:var(--red)">连接失败，请点击重试</span>' +
+            '<div style="margin-top:8px"><button class="btn btn-sm" onclick="retryLastMessage()" style="font-size:12px;padding:4px 12px">重试</button></div>';
+        }
+      } else if (S.currentBubble) {
+        // 显示已收到的部分内容 + 错误信息 + 重试按钮
+        const partial = S.fullReply ? renderEmotions(escapeHtml(S.fullReply)) + '<br>' : '';
+        S.currentBubble.innerHTML = partial +
+          '<span style="color:var(--red)">发送失败: ' + escapeHtml(e.message) + '</span>' +
+          '<div style="margin-top:8px"><button class="btn btn-sm" onclick="retryLastMessage()" style="font-size:12px;padding:4px 12px">重试</button></div>';
+      }
+      // 无论是否致命，都必须走完收尾，否则 S.streaming / 发送按钮会一直卡在禁用状态
+      if (fatal) {
+        S.currentBubble = null;
+        S.streaming = false;
+        if (btn) btn.disabled = false;
+        return;
+      }
     }
+    _flushRender();  // 流结束/出错时强制渲染最后内容
     finishReply();
   }
 
   function finishReply() {
-      if (S.currentBubble && S.fullReply) {
+      // 出错时气泡里已是「部分内容 + 错误 + 重试按钮」，不能再被完整回复覆盖掉
+      if (S.currentBubble && S.fullReply && !S.errored) {
         // 处理 [SPLIT] 标记，拆分成多条消息
         const parts = S.fullReply.split('[SPLIT]').map(p => p.trim()).filter(p => p.length > 0);
         
@@ -299,9 +380,7 @@
           for (const part of parts) {
             const div = document.createElement('div');
             div.className = 'msg assistant';
-            const avatar = document.createElement('div');
-            avatar.className = 'msg-avatar';
-            avatar.textContent = getAvatarChar();
+            const avatar = _mkMsgAvatar('assistant');
             const body = document.createElement('div');
             body.className = 'msg-body';
             const bubble = document.createElement('div');
@@ -370,9 +449,7 @@
     for (const part of parts) {
       const div = document.createElement('div');
       div.className = 'msg ' + role;
-      const avatar = document.createElement('div');
-      avatar.className = 'msg-avatar';
-      avatar.textContent = role === 'user' ? '你' : getAvatarChar();
+      const avatar = _mkMsgAvatar(role);
       const body = document.createElement('div');
       body.className = 'msg-body';
       const bubble = document.createElement('div');
@@ -405,9 +482,50 @@
     if (el) requestAnimationFrame(() => el.scrollTop = el.scrollHeight);
   }
 
+  // 重试上一条消息
+  window.retryLastMessage = function() {
+    const input = $('#msgInput');
+    if (!input) return;
+    // 获取最后一条用户消息
+    const userMsgs = $$('.msg.user .msg-bubble');
+    if (userMsgs.length > 0) {
+      const lastMsg = userMsgs[userMsgs.length - 1];
+      input.value = lastMsg.textContent || '';
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      // 移除失败的 assistant 消息：finishReply 已把 S.currentBubble 置空，
+      // 只能从 DOM 里找最后一个带「重试」按钮的气泡
+      const failed = $$('.msg.assistant')
+        .filter(el => el.querySelector('button[onclick*="retryLastMessage"]'))
+        .pop();
+      if (failed) failed.remove();
+      S.currentBubble = null;
+      sendMsg();
+    }
+  };
+
   function getAvatarChar() {
     const el = $('#chatAvatar');
     return (el && el.textContent) || 'M';
+  }
+
+  /* 当前激活角色名（供头像图片使用） */
+  function _personaName() {
+    const el = $('#chatName');
+    return (el && el.textContent && el.textContent.trim()) || 'MONO';
+  }
+
+  /* 创建消息头像元素：用户用「你」，角色用 AI 生成头像图片 */
+  function _mkMsgAvatar(role) {
+    const avatar = document.createElement('div');
+    avatar.className = 'msg-avatar';
+    if (role === 'user') {
+      avatar.textContent = '你';
+    } else if (window.MotoAvatars) {
+      MotoAvatars.apply(avatar, _personaName());
+    } else {
+      avatar.textContent = _personaName().charAt(0).toUpperCase();
+    }
+    return avatar;
   }
 
   async function handleImage(e) {
@@ -431,9 +549,13 @@
     if (!text) return;
     try {
       const r = await fetch('/api/tts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text}) });
-      const d = await r.json();
-      if (d.audio_url) new Audio(d.audio_url).play();
-    } catch(e) { console.error('TTS error', e); }
+      if (!r.ok) { const d = await r.json().catch(()=>({})); toast('TTS', d.error || '语音合成失败', 'error'); return; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.play();
+    } catch(e) { console.error('TTS error', e); toast('TTS', '语音合成失败', 'error'); }
   }
 
   /* ===== LOAD ALL ===== */
@@ -441,18 +563,95 @@
     await Promise.allSettled([loadStats(), loadSettings(), loadPersonas(), refreshLogs(), loadHistory(), loadDashboardFeed(), loadAdminUsers(), loadPersonaLibrary()]);
   }
 
-  async function loadHistory() {
+  let _historyOffset = 0;
+  let _historyHasMore = false;
+  let _loadingOlder = false;
+
+  async function loadHistory(append) {
     try {
-      const r = await fetch('/api/history/' + encodeURIComponent(S.cid));
+      const offset = append ? _historyOffset : 0;
+      const r = await fetch('/api/history/' + encodeURIComponent(S.cid) + '?limit=200&offset=' + offset);
       const d = await r.json();
       const msgs = d.messages || [];
-      if (!msgs.length) return;
-      removeWelcome();
+      // 后端 /api/history 返回的是 {messages, has_more, next_offset}，没有 total 字段
+      _historyHasMore = !!d.has_more;
+      if (!msgs.length && !append) return;
+      if (!append) removeWelcome();
       const container = $('#chatMessages');
       if (!container) return;
-      container.innerHTML = '';
-      msgs.forEach(m => addMsg(m.role, m.content, m.created_at));
-    } catch(e) { console.error('loadHistory error', e); }
+      if (!append) container.innerHTML = '';
+      if (append) {
+        // 旧消息插入到顶部
+        const prevHeight = container.scrollHeight;
+        const frag = document.createDocumentFragment();
+        msgs.forEach(m => {
+          const el = _buildMsgEl(m.role, m.content, m.created_at);
+          if (el) frag.appendChild(el);
+        });
+        container.insertBefore(frag, container.firstChild);
+        // 保持滚动位置不变
+        container.scrollTop = container.scrollHeight - prevHeight;
+      } else {
+        msgs.forEach(m => addMsg(m.role, m.content, m.created_at));
+        setTimeout(() => scrollChat(), 100);
+      }
+      _historyOffset = (typeof d.next_offset === 'number' && d.next_offset > 0)
+        ? d.next_offset
+        : offset + msgs.length;
+      // 绑定滚动加载更多（只绑定一次）
+      if (!append) _bindScrollLoad();
+    } catch(e) { console.error('[loadHistory] error:', e); }
+  }
+
+  function _bindScrollLoad() {
+    const container = $('#chatMessages');
+    if (!container || container._scrollBound) return;
+    container._scrollBound = true;
+    container.addEventListener('scroll', function() {
+      if (container.scrollTop < 60 && !_loadingOlder && _historyHasMore) {
+        _loadingOlder = true;
+        loadHistory(true).finally(() => { _loadingOlder = false; });
+      }
+    });
+  }
+
+  function _buildMsgEl(role, content, createdAt) {
+    if (!content) return null;
+    const parts = content.split('[SPLIT]').map(p => p.trim()).filter(p => p.length > 0);
+    if (!parts.length) parts.push('');
+    const timeStr = createdAt
+      ? new Date(createdAt).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'})
+      : new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+    const frag = document.createDocumentFragment();
+    for (const part of parts) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + role;
+      const avatar = _mkMsgAvatar(role);
+      const body = document.createElement('div');
+      body.className = 'msg-body';
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+      bubble.innerHTML = renderEmotions(escapeHtml(part));
+      body.appendChild(bubble);
+      // 所有消息都添加时间戳
+      const time = document.createElement('div');
+      time.className = 'msg-time';
+      time.textContent = timeStr;
+      body.appendChild(time);
+      // assistant 消息添加 TTS 按钮
+      if (role === 'assistant') {
+        const tts = document.createElement('button');
+        tts.className = 'msg-tts';
+        tts.textContent = '🔊';
+        tts.title = '朗读';
+        tts.onclick = () => playTTS(part);
+        body.appendChild(tts);
+      }
+      div.appendChild(avatar);
+      div.appendChild(body);
+      frag.appendChild(div);
+    }
+    return frag;
   }
 
   async function loadStats() {
@@ -467,10 +666,10 @@
         set('miniName', d.active_persona);
         set('chatName', d.active_persona);
         set('welcomeName', d.active_persona);
-        const first = (d.active_persona || 'M').charAt(0).toUpperCase();
-        set('miniAvatar', first);
-        set('chatAvatar', first);
-        set('welcomeAvatar', first);
+        // 头像图片化：字母头像替换为 AI 生成头像
+        ['miniAvatar','chatAvatar','bannerAvatar'].forEach(id => {
+          if (window.MotoAvatars) MotoAvatars.apply(document.getElementById(id), d.active_persona);
+        });
       }
     } catch(e) { console.error('loadStats error', e); }
   }
@@ -484,7 +683,7 @@
       const logs = d.logs || [];
       if (logs.length === 0) { el.innerHTML = '<div class="loading-text">暂无动态</div>'; return; }
       el.innerHTML = logs.reverse().map(l =>
-        '<div class="feed-item"><span class="feed-msg">' + escapeHtml(l.message) + '</span><span class="feed-time">' + l.time + '</span></div>'
+        '<div class="feed-item"><span class="feed-msg">' + escapeHtml(l.message) + '</span><span class="feed-time">' + escapeHtml(l.time) + '</span></div>'
       ).join('');
     } catch(e) { console.error('loadDashboardFeed error', e); }
   }
@@ -503,11 +702,11 @@ async function loadAdminUsers() {
             var overrideCount = Object.keys(u.persona_override||{}).length;
             var pendingCount = Object.keys(u.pending_persona_override||{}).length;
             var userPersonaCount = Object.keys(u.user_personas||{}).length;
-            var badges = '<span class="user-badge role-'+u.role+'">'+u.role+'</span>';
+            var badges = '<span class="user-badge role-'+escapeHtml(u.role)+'">'+escapeHtml(u.role)+'</span>';
             if (overrideCount) badges += ' <span class="user-badge override">'+overrideCount+'个设定</span>';
             if (userPersonaCount) badges += ' <span class="user-badge" style="background:var(--accent-soft);color:var(--accent)">'+userPersonaCount+'个自创</span>';
             if (pendingCount) badges += ' <span class="user-badge pending">'+pendingCount+'待审批</span>';
-            return '<div class="user-card" onclick="showUserDetail(\''+escapeHtml(u.username)+'\')">'
+            return '<div class="user-card" data-username="'+escapeHtml(u.username)+'">'
               +'<div class="user-card-avatar">'+first+'</div>'
               +'<div class="user-card-body">'
               +'<div class="user-card-name">'+escapeHtml(u.username)+'</div>'
@@ -517,6 +716,10 @@ async function loadAdminUsers() {
               +'<div class="user-card-arrow">→</div>'
               +'</div>';
           }).join('');
+          // 事件委托：点击用户名卡片跳转详情
+          userList.querySelectorAll('[data-username]').forEach(card => {
+            card.addEventListener('click', () => showUserDetail(card.dataset.username));
+          });
         }
 
         // Update dashboard user overview container
@@ -530,15 +733,19 @@ async function loadAdminUsers() {
             html += '<div style="display:flex;flex-direction:column;gap:6px">';
             users.slice(0, 5).forEach(function(u) {
               var first = (u.username || '?').charAt(0).toUpperCase();
-              html += '<div style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:var(--r-xs);cursor:pointer;transition:background 0.15s" onclick="showUserDetail(\''+escapeHtml(u.username)+'\')" onmouseover="this.style.background=\'var(--bg-hover)\'" onmouseout="this.style.background=\'\'">';
+              html += '<div data-username="'+escapeHtml(u.username)+'" style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:var(--r-xs);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background=\'var(--bg-hover)\'" onmouseout="this.style.background=\'\'">';
               html += '<div style="width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:#fff;flex-shrink:0">'+first+'</div>';
               html += '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escapeHtml(u.username)+'</div><div style="font-size:11px;color:var(--text-muted)">'+escapeHtml(u.persona||'-')+'</div></div>';
-              html += '<span class="user-badge role-'+u.role+'" style="font-size:10px">'+u.role+'</span>';
+              html += '<span class="user-badge role-'+escapeHtml(u.role)+'" style="font-size:10px">'+escapeHtml(u.role)+'</span>';
               html += '</div>';
             });
             if (count > 5) html += '<div style="text-align:center;font-size:12px;color:var(--text-muted);padding:4px">还有 '+(count-5)+' 个用户...</div>';
             html += '</div>';
             dashboardContainer.innerHTML = html;
+            // 事件委托：点击用户名卡片跳转详情
+            dashboardContainer.querySelectorAll('[data-username]').forEach(card => {
+              card.addEventListener('click', () => showUserDetail(card.dataset.username));
+            });
           }
         }
 
@@ -548,73 +755,6 @@ async function loadAdminUsers() {
 
       } catch(e) { console.error('loadAdminUsers error', e); }
     }
-  window.editAdminUser = async function(username) {
-    const editDiv = document.getElementById('adminUserEdit');
-    const title = document.getElementById('adminEditTitle');
-    if (editDiv) editDiv.style.display = '';
-    if (title) title.textContent = '编辑: ' + username;
-    editDiv.dataset.username = username;
-    try {
-      const r = await fetch('/api/admin/users/' + encodeURIComponent(username) + '/persona/MONO');
-      const d = await r.json();
-      const nameInput = document.getElementById('adminEditPersonaName');
-      const contentArea = document.getElementById('adminEditPersonaContent');
-      if (nameInput) nameInput.value = 'MONO';
-      if (contentArea) contentArea.value = d.override_content || '';
-    } catch(e) {}
-  };
-  window.hideAdminUserEdit = function() {
-    const el = document.getElementById('adminUserEdit');
-    if (el) el.style.display = 'none';
-  };
-  window.saveAdminUserPersona = async function() {
-    const editDiv = document.getElementById('adminUserEdit');
-    const username = editDiv ? editDiv.dataset.username : '';
-    const personaName = (document.getElementById('adminEditPersonaName')||{}).value || 'MONO';
-    const content = (document.getElementById('adminEditPersonaContent')||{}).value || '';
-    if (!username) return;
-    try {
-      const r = await fetch('/api/admin/users/' + encodeURIComponent(username) + '/persona/' + encodeURIComponent(personaName), {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({content})});
-      const d = await r.json();
-      if (d.success) toast('成功','已保存覆盖性格','success');
-      else toast('错误', d.error || '保存失败','error');
-    } catch(e) { toast('错误','保存失败','error'); }
-  };
-window.resetAdminUserPw = async function(username) {
-    const newPw = prompt('输入新密码:');
-    if (!newPw) return;
-    try {
-      const r = await fetch('/api/admin/users/reset-password', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username, new_password: newPw})});
-      const d = await r.json();
-      if (d.success) toast('成功','密码已重置','success');
-      else toast('错误', d.error || '重置失败','error');
-    } catch(e) { toast('错误','重置失败','error'); }
-  };
-window.deleteAdminUser = async function(username) {
-    if (!confirm('确定删除用户 ' + username + '？')) return;
-    try {
-      const r = await fetch('/api/admin/users/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username})});
-      const d = await r.json();
-      if (d.success) { toast('成功','已删除','success'); loadAdminUsers(); }
-      else toast('错误', d.error || '删除失败','error');
-    } catch(e) { toast('错误','删除失败','error'); }
-  };
-window.showCreateUser = function() {
-    const el = document.getElementById('createUserForm');
-    if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
-  };
-  window.createAdminUser = async function() {
-    const username = (document.getElementById('newUserName')||{}).value || '';
-    const password = (document.getElementById('newUserPass')||{}).value || '';
-    const persona = (document.getElementById('newUserPersona')||{}).value || 'MONO';
-    if (!username || !password) { toast('错误','请填写完整','error'); return; }
-    try {
-      const r = await fetch('/api/admin/users/create', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username, password, persona})});
-      const d = await r.json();
-      if (d.success) { toast('成功','用户已创建','success'); loadAdminUsers(); }
-      else toast('错误', d.error || '创建失败','error');
-    } catch(e) { toast('错误','创建失败','error'); }
-  };
 
 async function loadSettings() {
     try {
@@ -626,18 +766,15 @@ async function loadSettings() {
       setVal('cfgTemp', d.temperature);
       setVal('cfgMaxTokens', d.max_tokens);
       setVal('cfgContextRounds', d.max_context_rounds);
-      setVal('cfgVisionKey', d.vision_api_key);
+      // 后端只下发掩码；掩码仅作 placeholder 展示，避免保存时把掩码当新 key 回写覆盖真实 key
+      const setKeyPh = (id, masked) => { const el = $('#'+id); if (el) { el.value = ''; el.placeholder = masked || '未配置，输入新 key 以保存'; } };
+      setKeyPh('cfgVisionKey', d.vision_api_key);
       setVal('cfgVisionBaseUrl', d.vision_base_url);
       setVal('cfgVisionModel', d.vision_model);
-      setVal('cfgTtsKey', d.tts_api_key);
+      setKeyPh('cfgTtsKey', d.tts_api_key);
       setVal('cfgTtsBaseUrl', d.tts_base_url);
       setVal('cfgTtsModelId', d.tts_model_id);
-      const maskedEl = $('#apiKeyMasked');
-      if (maskedEl) maskedEl.textContent = d.api_key_masked || '未配置';
-      const keyInputRow = $('#keyInputRow');
-      if (keyInputRow) keyInputRow.style.display = 'none';
-      const apiKeyEdit = $('#apiKeyEdit');
-      if (apiKeyEdit) apiKeyEdit.style.display = 'none';
+      setKeyPh('cfgApiKey', d.api_key_masked);
     } catch(e) { console.error('loadSettings error', e); }
   }
 
@@ -655,13 +792,14 @@ async function loadSettings() {
       }
       grid.innerHTML = S.personas.map(p =>
         '<div class="persona-card' + (p.active ? ' active' : '') + '">' +
-        '<div class="persona-card-avatar">' + p.name.charAt(0).toUpperCase() + '</div>' +
+        '<div class="persona-card-avatar has-img">' + (window.MotoAvatars ? MotoAvatars.img(p.name) : escapeHtml(p.name.charAt(0).toUpperCase())) + '</div>' +
         '<div class="persona-card-name">' + escapeHtml(p.name) + '</div>' +
         (p.active ? '<span class="badge">当前</span>' : '') +
         '<div class="persona-card-actions">' +
-        (p.active ? '' : '<button class="btn-icon" onclick="switchPersona(\'' + p.name + '\')" title="切换"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg></button>') +
-        '<button class="btn-icon" onclick="editPersona(\'' + p.name + '\')" title="编辑"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>' +
-        (p.active ? '' : '<button class="btn-icon danger" onclick="deletePersona(\'' + p.name + '\')" title="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>') +
+        '<button class="btn-icon" onclick="uploadPersonaAvatar(this.dataset.name)" data-name="' + escapeHtml(p.name) + '" title="更换头像"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="13" r="4" stroke="url(#warmGrad)" stroke-width="1.8"/></svg></button>' +
+        (p.active ? '' : '<button class="btn-icon" onclick="switchPersona(this.dataset.name)" data-name="' + escapeHtml(p.name) + '" title="切换"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><polyline points="23 4 23 10 17 10" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>') +
+        '<button class="btn-icon" onclick="editPersona(this.dataset.name)" data-name="' + escapeHtml(p.name) + '" title="编辑"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>' +
+        (p.active ? '' : '<button class="btn-icon danger" onclick="deletePersona(this.dataset.name)" data-name="' + escapeHtml(p.name) + '" title="删除"><svg viewBox="0 0 24 24" fill="none" width="14" height="14"><polyline points="3 6 5 6 21 6" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>') +
         '</div></div>'
       ).join('');
     } catch(e) { console.error('loadPersonas error', e); }
@@ -737,6 +875,40 @@ async function loadSettings() {
     } catch(e) { toast('错误', '删除失败', 'error'); }
   };
 
+  /* ===== 角色头像上传 ===== */
+  let _avatarInput = null;
+  window.uploadPersonaAvatar = function(name) {
+    if (!_avatarInput) {
+      _avatarInput = document.createElement('input');
+      _avatarInput.type = 'file';
+      _avatarInput.accept = 'image/jpeg,image/png,image/webp,image/gif';
+      _avatarInput.style.display = 'none';
+      document.body.appendChild(_avatarInput);
+      _avatarInput.addEventListener('change', async function() {
+        const file = _avatarInput.files[0];
+        const persona = _avatarInput.dataset.persona;
+        _avatarInput.value = '';
+        if (!file || !persona) return;
+        if (file.size > 5 * 1024 * 1024) { toast('错误', '图片需在 5MB 以内', 'error'); return; }
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+          const r = await fetch('/api/personas/' + encodeURIComponent(persona) + '/avatar', { method: 'POST', body: fd });
+          const d = await r.json();
+          if (d.success) {
+            if (window.MotoAvatars) MotoAvatars.bust(persona, d.version);
+            toast('头像', persona + ' 的头像已更新', 'success');
+            loadPersonas(); loadStats();
+          } else {
+            toast('错误', d.error || '上传失败', 'error');
+          }
+        } catch(e) { toast('错误', '上传失败', 'error'); }
+      });
+    }
+    _avatarInput.dataset.persona = name;
+    _avatarInput.click();
+  };
+
   /* ===== LOGS ===== */
   window.refreshLogs = async function() {
     try {
@@ -748,8 +920,8 @@ async function loadSettings() {
       const logs = d.logs || [];
       if (logs.length === 0) { container.innerHTML = '<div class="loading-text">暂无日志</div>'; return; }
       container.innerHTML = logs.reverse().map(l => {
-        const cls = 'log-line log-' + l.level;
-        return '<div class="' + cls + '"><span class="log-time">' + l.time + '</span><span class="log-level">' + l.level.toUpperCase() + '</span><span class="log-msg">' + escapeHtml(l.message) + '</span></div>';
+        const cls = 'log-line log-' + escapeHtml(l.level);
+        return '<div class="' + cls + '"><span class="log-time">' + escapeHtml(l.time) + '</span><span class="log-level">' + escapeHtml(l.level.toUpperCase()) + '</span><span class="log-msg">' + escapeHtml(l.message) + '</span></div>';
       }).join('');
     } catch(e) { console.error('refreshLogs error', e); }
   };
@@ -766,7 +938,8 @@ async function loadSettings() {
       const data = {};
       const getVal = id => (($('#'+id)||{}).value||'').trim();
       const apiKeyVal = getVal('cfgApiKey');
-      if (apiKeyVal) data['llm.api_key'] = apiKeyVal;
+      // 空值/掩码值不提交，保留原 key
+      if (apiKeyVal && !apiKeyVal.includes('***') && !apiKeyVal.includes('•')) data['llm.api_key'] = apiKeyVal;
       data['llm.base_url'] = getVal('cfgBaseUrl');
       data['llm.model'] = getVal('cfgModel');
       const temp = parseFloat(getVal('cfgTemp'));
@@ -792,37 +965,12 @@ async function loadSettings() {
 
   window.toggleKeyVis = function() { const el = $('#cfgApiKey'); if (el) el.type = el.type === 'password' ? 'text' : 'password'; };
 
-  window.revealApiKey = function() {
-    const edit = $('#apiKeyEdit'); if (edit) edit.style.display = 'block';
-    const status = $('#keyVerifyStatus'); if (status) { status.textContent = ''; status.className = 'cfg-status'; }
-    setTimeout(() => { const pv = $('#keyVerifyPw'); if (pv) pv.focus(); }, 100);
-  };
-  window.hideKeyEdit = function() {
-    const edit = $('#apiKeyEdit'); if (edit) edit.style.display = 'none';
-    const el = $('#cfgApiKey'); if (el) el.value = '';
-  };
-  window.verifyKeyAccess = async function() {
-    const pw = (($('#keyVerifyPw')||{}).value||'');
-    const status = $('#keyVerifyStatus');
-    if (!pw) { if (status) { status.textContent = '请输入密码'; status.className = 'cfg-status error'; } return; }
-    try {
-      const r = await fetch('/api/auth/verify-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:pw}) });
-      const d = await r.json();
-      if (d.authenticated) {
-        if (status) { status.textContent = '验证成功'; status.className = 'cfg-status success'; }
-        const kr = await fetch('/api/auth/reveal-key', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({password:pw, key_type:'llm'}) });
-        const kd = await kr.json();
-        const el = $('#cfgApiKey'); if (el) el.value = kd.key || '';
-        const inputRow = $('#keyInputRow'); if (inputRow) inputRow.style.display = 'block';
-      } else {
-        if (status) { status.textContent = d.error || '密码错误'; status.className = 'cfg-status error'; }
-      }
-    } catch(e) { if (status) { status.textContent = '验证失败'; status.className = 'cfg-status error'; } }
-  };
-
   window.saveVisionConfig = async function() {
     const getVal = id => (($('#'+id)||{}).value||'').trim();
-    const data = { 'vision.api_key': getVal('cfgVisionKey'), 'vision.base_url': getVal('cfgVisionBaseUrl'), 'vision.model': getVal('cfgVisionModel') };
+    const data = { 'vision.base_url': getVal('cfgVisionBaseUrl'), 'vision.model': getVal('cfgVisionModel') };
+    const keyVal = getVal('cfgVisionKey');
+    // 空值/掩码值不提交，保留原 key
+    if (keyVal && !keyVal.includes('***') && !keyVal.includes('•')) data['vision.api_key'] = keyVal;
     const status = $('#cfgVisionStatus');
     try {
       const r = await fetch('/api/config/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
@@ -834,7 +982,10 @@ async function loadSettings() {
 
   window.saveTtsConfig = async function() {
     const getVal = id => (($('#'+id)||{}).value||'').trim();
-    const data = { 'tts.api_key': getVal('cfgTtsKey'), 'tts.base_url': getVal('cfgTtsBaseUrl'), 'tts.model_id': getVal('cfgTtsModelId') };
+    const data = { 'tts.base_url': getVal('cfgTtsBaseUrl'), 'tts.model_id': getVal('cfgTtsModelId') };
+    const keyVal = getVal('cfgTtsKey');
+    // 空值/掩码值不提交，保留原 key
+    if (keyVal && !keyVal.includes('***') && !keyVal.includes('•')) data['tts.api_key'] = keyVal;
     const status = $('#cfgTtsStatus');
     try {
       const r = await fetch('/api/config/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
@@ -844,36 +995,65 @@ async function loadSettings() {
     } catch(e) { toast('错误','保存失败','error'); if (status) { status.textContent = '保存失败'; status.className = 'cfg-status error'; } }
   };
 
-  window.changeAdminPw = async function() {
-    const oldPw = (($('#oldPw')||{}).value||'');
-    const newPw = (($('#newPw')||{}).value||'');
-    if (!oldPw || !newPw) { toast('错误','请填写完整','error'); return; }
-    if (newPw.length < 4) { toast('错误','新密码至少4位','error'); return; }
-    try {
-      const r = await fetch('/api/auth/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({old_password:oldPw, new_password:newPw}) });
-      const d = await r.json();
-      if (d.success) { toast('成功','管理密码已修改','success'); const e1=$('#oldPw'); if(e1) e1.value=''; const e2=$('#newPw'); if(e2) e2.value=''; }
-      else toast('错误', d.error||'修改失败', 'error');
-    } catch(e) { toast('错误','修改失败','error'); }
-  };
-
   /* ===== TOKEN ===== */
   async function refreshTokenUsage() {
     try {
-      const r = await fetch('/api/token-usage');
+      const r = await fetch('/api/admin/token-usage');
       const d = await r.json();
-      const u = d.usage || {};
+      const total = d.total || {};
+      const users = d.users || [];
       const set = (id, v) => { const el = $('#'+id); if (el) el.textContent = v; };
-      set('dashTokenPrompt', u.prompt_tokens || 0);
-      set('dashTokenCompletion', u.completion_tokens || 0);
-      set('dashTokenTotal', u.total_tokens || 0);
-      set('chatTokenDisplay', u.total_tokens || '-');
+      set('dashTokenPrompt', total.prompt_tokens || 0);
+      set('dashTokenCompletion', total.completion_tokens || 0);
+      set('dashTokenTotal', total.total_tokens || 0);
+      set('chatTokenDisplay', total.total_tokens || '-');
+      
+      // 显示每个用户的用量详情
+      const detailContainer = $('#tokenUsageDetailContainer');
+      if (detailContainer) {
+        if (users.length > 0) {
+          let html = '<div style="overflow-x:auto;">';
+          html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+          html += '<thead><tr style="border-bottom:1px solid var(--border);">';
+          html += '<th style="text-align:left;padding:8px 12px;">用户</th>';
+          html += '<th style="text-align:right;padding:8px 12px;">输入 Token</th>';
+          html += '<th style="text-align:right;padding:8px 12px;">输出 Token</th>';
+          html += '<th style="text-align:right;padding:8px 12px;">总 Token</th>';
+          html += '<th style="text-align:right;padding:8px 12px;">请求次数</th>';
+          html += '</tr></thead><tbody>';
+          
+          users.forEach(u => {
+            html += '<tr style="border-bottom:1px solid var(--border);">';
+            html += `<td style="padding:8px 12px;">${escapeHtml(u.username)}</td>`;
+            html += `<td style="text-align:right;padding:8px 12px;">${u.prompt_tokens.toLocaleString()}</td>`;
+            html += `<td style="text-align:right;padding:8px 12px;">${u.completion_tokens.toLocaleString()}</td>`;
+            html += `<td style="text-align:right;padding:8px 12px;font-weight:600;">${u.total_tokens.toLocaleString()}</td>`;
+            html += `<td style="text-align:right;padding:8px 12px;">${u.request_count}</td>`;
+            html += '</tr>';
+          });
+          
+          // 合计行
+          html += '<tr style="font-weight:600;background:var(--bg-hover);">';
+          html += '<td style="padding:8px 12px;">合计</td>';
+          html += `<td style="text-align:right;padding:8px 12px;">${total.prompt_tokens.toLocaleString()}</td>`;
+          html += `<td style="text-align:right;padding:8px 12px;">${total.completion_tokens.toLocaleString()}</td>`;
+          html += `<td style="text-align:right;padding:8px 12px;">${total.total_tokens.toLocaleString()}</td>`;
+          html += `<td style="text-align:right;padding:8px 12px;">${total.request_count}</td>`;
+          html += '</tr>';
+          
+          html += '</tbody></table></div>';
+          detailContainer.innerHTML = html;
+        } else {
+          detailContainer.innerHTML = '<div style="opacity:0.6;padding:12px;">暂无数据</div>';
+        }
+      }
     } catch(e) {}
   }
 
   /* ===== UPTIME ===== */
+  let _uptimeTimer = null;
   function startUptime() {
-    setInterval(() => {
+    _uptimeTimer = setInterval(() => {
       const diff = Math.floor((Date.now() - S.start) / 1000);
       const h = String(Math.floor(diff / 3600)).padStart(2, '0');
       const m = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
@@ -921,7 +1101,7 @@ async function loadSettings() {
     var hint = ((document.getElementById('aiGenHint')||{}).value||'').trim();
     if (!_selectedTraits.length && !hint) { toast('\u9519\u8bef','\u8bf7\u81f3\u5c11\u9009\u62e9\u4e00\u4e2a\u7279\u5f81','error'); return; }
     var btn = document.getElementById('aiGenBtn');
-    if (btn) { btn.disabled = true; btn.textContent = '\u751f\u6210\u4e2d...'; }
+    if (btn) { btn.disabled = true; btn.textContent = '生成中…（本地模型约需1分钟）'; }
     try {
       var r = await fetch('/api/generate-personality', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({traits: _selectedTraits, custom_hint: hint})});
       var d = await r.json();
@@ -959,12 +1139,18 @@ async function loadSettings() {
 
   function escapeHtml(s) {
     if (!s) return '';
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
+
+  /* 表情标签剥离：后端 prompt 要求模型输出 [happy]/[sad] 等标签，
+     这里统一隐藏，避免标签原样出现在气泡里（也能清理历史数据里已存的标签）。
+     后端标签全部为 3-12 个小写 ASCII 字母，故用等价模式统一匹配，
+     无需与 src/app/services/emoji.py 的 65 个标签名重复维护。 */
+  var EMOTION_TAG_RE = /\[[a-z]{3,12}\]/g;
 
   function renderEmotions(text) {
     if (!text) return '';
-    return text.replace(/\n/g, '<br>');
+    return text.replace(EMOTION_TAG_RE, '').replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n/g, '<br>');
   }
 
   /* ===== ADMIN: USER MANAGEMENT ===== */
@@ -972,7 +1158,7 @@ async function loadSettings() {
     const modal = document.getElementById('createUserModal');
     if (modal) modal.style.display = 'flex';
     const sel = document.getElementById('newUserPersona');
-    if (sel) sel.innerHTML = S.personas.map(p => '<option value="'+p.name+'">'+p.name+'</option>').join('');
+    if (sel) sel.innerHTML = S.personas.map(p => '<option value="'+escapeHtml(p.name)+'">'+escapeHtml(p.name)+'</option>').join('');
   };
   window.closeCreateUser = function() { document.getElementById('createUserModal').style.display = 'none'; };
   window.doCreateUser = async function() {
@@ -1011,7 +1197,7 @@ async function loadSettings() {
       html += '<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;padding:16px;background:var(--accent-soft);border:1px solid var(--border);border-radius:var(--r)">';
       html += '<div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;color:#fff;flex-shrink:0">'+first+'</div>';
       html += '<div style="flex:1"><div style="font-weight:700;font-size:15px">'+escapeHtml(username)+'</div>';
-      html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">角色: '+escapeHtml(user.persona||'-')+' · 类型: <span class="user-badge role-'+user.role+'">'+user.role+'</span>'+(overrideCount?' · <span class="user-badge override">'+overrideCount+'个性设定</span>':'')+(pendingCount?' · <span class="user-badge pending">'+pendingCount+'待审批</span>':'')+'</div></div>';
+      html += '<div style="font-size:12px;color:var(--text-secondary);margin-top:2px">角色: '+escapeHtml(user.persona||'-')+' · 类型: <span class="user-badge role-'+escapeHtml(user.role)+'">'+escapeHtml(user.role)+'</span>'+(overrideCount?' · <span class="user-badge override">'+overrideCount+'个性设定</span>':'')+(pendingCount?' · <span class="user-badge pending">'+pendingCount+'待审批</span>':'')+'</div></div>';
       html += '<div style="display:flex;gap:6px;flex-shrink:0"><button class="btn" onclick="viewUserChatHistory(\''+escapeHtml(username)+'\')" style="font-size:12px;padding:5px 12px">查看聊天记录</button></div>';
       html += '</div>';
 
@@ -1043,8 +1229,8 @@ async function loadSettings() {
       var overrides = user.persona_override || {};
       S.personas.forEach(function(p) {
         var val = overrides[p.name] || '';
-        html += '<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:600">'+p.name+(val?' <span style="color:var(--green)">已设置</span>':' <span style="color:var(--text-muted)">未设置</span>')+'</div>';
-        html += '<textarea class="form-input admin-override-textarea" data-persona="'+p.name+'" rows="2">'+escapeHtml(val)+'</textarea></div>';
+        html += '<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:600">'+escapeHtml(p.name)+(val?' <span style="color:var(--green)">已设置</span>':' <span style="color:var(--text-muted)">未设置</span>')+'</div>';
+        html += '<textarea class="form-input admin-override-textarea" data-persona="'+escapeHtml(p.name)+'" rows="2">'+escapeHtml(val)+'</textarea></div>';
       });
       html += '</div>';
       var pendings = user.pending_persona_override || {};
@@ -1062,14 +1248,14 @@ async function loadSettings() {
       S.personas.forEach(function(p) {
         var checked = isAllAllowed || (allowed && allowed.includes(p.name));
         html += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:13px">';
-        html += '<input type="checkbox" class="admin-allowed-persona" data-name="'+p.name+'" '+(checked?'checked':'')+'> '+escapeHtml(p.name)+'</label>';
+        html += '<input type="checkbox" class="admin-allowed-persona" data-name="'+escapeHtml(p.name)+'" '+(checked?'checked':'')+'> '+escapeHtml(p.name)+'</label>';
       });
       // Add user-created personas
       upKeys.forEach(function(pn) {
         if (S.personas.find(function(gp) { return gp.name === pn; })) return;
         var checked = isAllAllowed || (allowed && allowed.includes(pn));
         html += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:4px 10px;font-size:13px">';
-        html += '<input type="checkbox" class="admin-allowed-persona" data-name="'+pn+'" '+(checked?'checked':'')+'> '+escapeHtml(pn)+' <span style="color:var(--accent);font-size:11px">自创</span></label>';
+        html += '<input type="checkbox" class="admin-allowed-persona" data-name="'+escapeHtml(pn)+'" '+(checked?'checked':'')+'> '+escapeHtml(pn)+' <span style="color:var(--accent);font-size:11px">自创</span></label>';
       });
       html += '</div>';
       html += '<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;color:var(--text-muted)">';
@@ -1082,6 +1268,7 @@ async function loadSettings() {
       // Tab: Account security
       html += '<div id="userTabAccount" style="display:none">';
       html += '<div style="margin-bottom:20px;padding:14px;background:var(--amber-soft);border:1px solid var(--amber);border-radius:var(--r-sm)"><div style="font-weight:600;color:var(--amber);margin-bottom:4px">重置密码</div><div style="font-size:12px;color:var(--text-secondary)">修改后用户需使用新密码登录</div><div style="display:flex;gap:8px;margin-top:10px"><input id="adminResetPwInput" class="form-input" type="text" placeholder="输入新密码" style="flex:1"><button class="btn btn-primary" onclick="doResetUserPw(\''+escapeHtml(username)+'\')">重置密码</button></div></div>';
+      html += '<div id="userApiConfigSection" style="margin-bottom:20px;padding:14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm)"><div style="font-weight:600;margin-bottom:4px">自定义 API 配置</div><div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px">用户自定义的 API 配置（如果有）</div><div id="userApiConfigInfo" style="font-size:13px;color:var(--text-muted)">加载中...</div></div>';
       html += '<div style="margin-bottom:16px"><div style="font-weight:600;margin-bottom:6px">会话ID</div><div style="font-size:13px;font-family:var(--font-mono);background:var(--bg-input);padding:8px 12px;border-radius:var(--r-xs)">'+escapeHtml(user.conversation_id||'default')+'</div></div>';
       html += '<div style="margin-bottom:16px"><div style="font-weight:600;margin-bottom:6px">允许的角色</div><div style="font-size:13px;color:var(--text-secondary)">'+escapeHtml(isAllAllowed?'全部':(allowed||[]).join(', ')||'无')+'</div></div>';
       html += '</div>';
@@ -1090,8 +1277,36 @@ async function loadSettings() {
       html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">';
       html += '<button class="btn btn-primary" onclick="saveUserDetail(\''+escapeHtml(username)+'\')">保存修改</button></div>';
       content.innerHTML = html;
+      // 加载用户的 API 配置
+      loadUserApiConfigForAdmin(username);
     } catch(e) { content.innerHTML = '<p style="color:var(--red)">加载失败: '+escapeHtml(e.message)+'</p>'; }
   };
+
+  async function loadUserApiConfigForAdmin(username) {
+    try {
+      const r = await fetch('/api/admin/users/' + encodeURIComponent(username) + '/api-config');
+      const el = document.getElementById('userApiConfigInfo');
+      if (!el) return;
+      if (r.ok) {
+        const d = await r.json();
+        if (d.has_custom_api) {
+          el.innerHTML = '<div style="display:flex;flex-direction:column;gap:6px">'
+            + '<div><span style="color:var(--text-muted)">状态:</span> <span style="color:var(--green);font-weight:600">已配置自定义 API</span></div>'
+            + (d.base_url ? '<div><span style="color:var(--text-muted)">API 地址:</span> ' + escapeHtml(d.base_url) + '</div>' : '')
+            + (d.model ? '<div><span style="color:var(--text-muted)">模型:</span> ' + escapeHtml(d.model) + '</div>' : '')
+            + '<div><span style="color:var(--text-muted)">API Key:</span> <code style="background:var(--bg-input);padding:2px 6px;border-radius:4px;font-size:12px">已设置</code></div>'
+            + '</div>';
+        } else {
+          el.innerHTML = '<span style="color:var(--text-muted)">未配置，使用系统默认 API</span>';
+        }
+      } else {
+        el.innerHTML = '<span style="color:var(--text-muted)">无法获取配置信息</span>';
+      }
+    } catch (e) {
+      const el = document.getElementById('userApiConfigInfo');
+      if (el) el.innerHTML = '<span style="color:var(--text-muted)">加载失败</span>';
+    }
+  }
 
   window.switchUserDetailTab = function(btn, tab) {
     document.querySelectorAll('.user-detail-tab').forEach(function(b) {
@@ -1135,7 +1350,7 @@ async function loadSettings() {
     try {
       var r = await fetch('/api/admin/users/reset-password', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username: username, new_password: newPw})});
       var d = await r.json();
-      if (d.success) { toast('成功','密码已重置为: '+newPw,'success'); if (input) input.value = ''; }
+      if (d.success) { toast('成功','密码已重置','success'); if (input) input.value = ''; }
       else toast('错误', d.error || '重置失败','error');
     } catch(e) { toast('错误','重置失败','error'); }
   };
@@ -1230,9 +1445,6 @@ async function loadSettings() {
       else { toast('错误', d.error||'删除失败','error'); }
     } catch(e) { toast('错误','删除失败','error'); }
   };
-
-
-  window.toggleAllowAll = function(el) { document.querySelectorAll(".admin-allowed-persona").forEach(cb => { cb.checked = el.checked; }); };
 })();
 
 

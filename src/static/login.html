@@ -4,101 +4,94 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MotoChat 登录</title>
-  <link rel="stylesheet" href="/static/style.css?v=3">
+  <link rel="stylesheet" href="/static/style.css?v=5">
   <script src="/static/theme.js"></script>
   <style>
     .login-page {
       min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      background: var(--bg-root); position: relative; overflow: hidden;
-      transition: background var(--transition-slow);
+      background: #0a0a12; position: relative; overflow: hidden;
     }
-    .login-bg { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-    .login-orb {
-      position: absolute; border-radius: 50%; filter: blur(90px); opacity: 0.05;
+    /* AI 生成主视觉背景 */
+    .login-bg { position: absolute; inset: 0; pointer-events: none; }
+    .login-bg::before {
+      content: ''; position: absolute; inset: 0;
+      background: url('/static/assets/login-hero.jpg') center / cover no-repeat;
+      animation: heroDrift 24s ease-in-out infinite alternate;
     }
-    .login-orb-1 {
-      width: 480px; height: 480px; background: var(--accent);
-      top: -140px; right: -120px; animation: orb1 14s ease-in-out infinite;
+    @keyframes heroDrift {
+      from { transform: scale(1.02) translate(0, 0); }
+      to { transform: scale(1.1) translate(-1.5%, 1.5%); }
     }
-    .login-orb-2 {
-      width: 380px; height: 380px; background: var(--purple);
-      bottom: -120px; left: -100px; animation: orb2 12s ease-in-out infinite;
-    }
-    .login-orb-3 {
-      width: 240px; height: 240px; background: var(--cyan);
-      top: 45%; left: 55%; animation: orb3 16s ease-in-out infinite;
-    }
-    @keyframes orb1 { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(-50px,40px) scale(1.05)} 66%{transform:translate(30px,-30px) scale(0.95)} }
-    @keyframes orb2 { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(40px,-30px) scale(1.08)} 66%{transform:translate(-30px,45px) scale(0.93)} }
-    @keyframes orb3 { 0%,100%{transform:translate(0,0) scale(1)} 50%{transform:translate(-25px,-20px) scale(1.1)} }
-
-    .login-grid {
-      position: absolute; inset: 0; pointer-events: none; overflow: hidden; opacity: 0.03;
-    }
-    .login-grid::before {
-      content: ''; position: absolute; inset: -50%;
-      background-image: radial-gradient(circle at 1px 1px, var(--text-muted) 1px, transparent 0);
-      background-size: 40px 40px;
+    .login-bg::after {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse 90% 70% at 50% 45%, transparent 30%, rgba(6, 6, 14, 0.72) 100%),
+                  linear-gradient(180deg, rgba(6, 6, 14, 0.25), rgba(6, 6, 14, 0.55));
     }
 
     .login-wrapper {
       position: relative; z-index: 1; width: 100%; max-width: 420px; padding: 24px;
-      animation: loginEnter 0.7s var(--ease-spring);
+      animation: loginEnter 0.8s cubic-bezier(0.19, 1, 0.22, 1);
     }
     @keyframes loginEnter { from { opacity: 0; transform: translateY(30px) scale(0.97); } }
 
     .login-card {
-      background: var(--bg-card); border: 1px solid var(--border);
+      background: rgba(16, 16, 28, 0.58);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(28px) saturate(170%);
+      -webkit-backdrop-filter: blur(28px) saturate(170%);
       border-radius: var(--r-xl); padding: 44px 36px 36px;
-      box-shadow: var(--shadow-lg); position: relative; overflow: hidden;
-      transition: all var(--transition-slow);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      position: relative; overflow: hidden;
     }
     .login-card::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), var(--purple), transparent);
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
     }
 
-    .login-logo { text-align: center; margin-bottom: 36px; }
+    .login-logo { text-align: center; margin-bottom: 32px; }
     .login-logo .logo-icon {
-      width: 64px; height: 64px; margin: 0 auto 20px;
-      background: linear-gradient(135deg, var(--accent), var(--purple));
-      border-radius: var(--r-lg); display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 8px 36px var(--accent-glow);
-      animation: logoPulse 3s ease-in-out infinite;
+      width: 72px; height: 72px; margin: 0 auto 18px;
+      border-radius: 50%; overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.15);
+      animation: logoFloat 5s ease-in-out infinite;
     }
-    @keyframes logoPulse { 0%,100%{box-shadow:0 8px 36px var(--accent-glow)} 50%{box-shadow:0 12px 48px var(--accent-glow),0 0 0 2px var(--accent-glow)} }
-    .login-logo .logo-icon svg { width: 30px; height: 30px; color: #fff; }
+    .login-logo .logo-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    @keyframes logoFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
     .login-logo h1 {
-      font-size: 26px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.4px;
+      font-size: 27px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.4px;
+      color: #f2f2f8;
     }
-    .login-logo p { font-size: 14px; color: var(--text-secondary); }
+    .login-logo p { font-size: 14px; color: rgba(228, 228, 240, 0.66); }
 
     .login-divider {
-      display: flex; align-items: center; gap: 14px; margin: 30px 0;
-      color: var(--text-muted); font-size: 11px;
+      display: flex; align-items: center; gap: 14px; margin: 28px 0;
+      color: rgba(228, 228, 240, 0.4); font-size: 11px;
       text-transform: uppercase; letter-spacing: 2px; font-weight: 600;
     }
     .login-divider::before, .login-divider::after {
-      content: ''; flex: 1; height: 1px; background: var(--border-medium);
+      content: ''; flex: 1; height: 1px; background: rgba(255, 255, 255, 0.1);
     }
 
     .login-form .form-group { margin-bottom: 20px; }
     .login-form .form-group label {
       display: block; margin-bottom: 7px; font-size: 11px;
-      font-weight: 600; color: var(--text-secondary);
+      font-weight: 600; color: rgba(228, 228, 240, 0.55);
       text-transform: uppercase; letter-spacing: 0.8px;
     }
     .login-form .form-input {
-      width: 100%; padding: 13px 16px; background: var(--bg-input);
-      border: 1px solid var(--border-medium); border-radius: var(--r-sm);
-      color: var(--text); font-size: 14px; font-family: var(--font);
+      width: 100%; padding: 13px 16px;
+      background: rgba(10, 10, 20, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: var(--r-sm);
+      color: #ececf4; font-size: 14px; font-family: var(--font);
       transition: all var(--transition);
     }
     .login-form .form-input:focus {
       outline: none; border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-glow);
+      background: rgba(10, 10, 20, 0.7);
     }
-    .login-form .form-input::placeholder { color: var(--text-muted); }
+    .login-form .form-input::placeholder { color: rgba(228, 228, 240, 0.3); }
 
     .login-btn {
       width: 100%; justify-content: center; padding: 13px 0; font-size: 14px;
@@ -115,7 +108,7 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     .login-error {
-      font-size: 12px; color: var(--red); margin-top: 14px; text-align: center;
+      font-size: 12px; color: #f87171; margin-top: 14px; text-align: center;
       min-height: 18px; font-weight: 500; transition: all 0.2s;
     }
 
@@ -123,36 +116,25 @@
       text-align: center; margin-top: 32px;
       display: flex; align-items: center; justify-content: center; gap: 16px;
     }
-    .login-footer span { width: 3px; height: 3px; border-radius: 50%; background: var(--border-medium); }
-    .login-footer a { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 12px; transition: opacity 0.2s; }
+    .login-footer span { width: 3px; height: 3px; border-radius: 50%; background: rgba(255, 255, 255, 0.18); }
+    .login-footer a { color: var(--accent-light); text-decoration: none; font-weight: 600; font-size: 12px; transition: opacity 0.2s; }
     .login-footer a:hover { opacity: 0.7; }
 
     @media (prefers-reduced-motion: reduce) {
-      .login-orb, .login-logo .logo-icon { animation: none !important; }
+      .login-bg::before, .login-logo .logo-icon { animation: none !important; }
       .login-wrapper { animation: none !important; }
     }
   </style>
 </head>
 <body>
   <div class="login-page">
-    <div class="login-bg">
-      <div class="login-orb login-orb-1"></div>
-      <div class="login-orb login-orb-2"></div>
-      <div class="login-orb login-orb-3"></div>
-    </div>
-    <div class="login-grid"></div>
+    <div class="login-bg"></div>
 
     <div class="login-wrapper">
       <div class="login-card">
         <div class="login-logo">
           <div class="logo-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2a4 4 0 014 4c0 2.2-1.8 4-4 4m0 0a4 4 0 01-4-4c0-2.2 1.8-4 4-4m0 0v2m0 2v12m-4-2l4 2 4-2"/>
-              <circle cx="12" cy="6" r="1.5"/>
-              <circle cx="10" cy="17" r="1" opacity="0.6"/>
-              <circle cx="14" cy="17" r="1" opacity="0.6"/>
-              <circle cx="12" cy="20" r="1" opacity="0.3"/>
-            </svg>
+            <img src="/static/assets/avatar-default.jpg" alt="MotoChat">
           </div>
           <h1>MotoChat</h1>
           <p>本地 AI 角色聊天平台</p>
@@ -182,17 +164,5 @@
   </div>
 
   <script src="/static/login.js?v=4"></script>
-  <script>
-    (function() {
-      var btn = document.getElementById('authLoginBtn');
-      var origClick = btn ? btn.onclick : null;
-      if (btn) {
-        btn.addEventListener('click', function() {
-          btn.classList.add('loading');
-          setTimeout(function() { btn.classList.remove('loading'); }, 800);
-        });
-      }
-    })();
-  </script>
 </body>
 </html>

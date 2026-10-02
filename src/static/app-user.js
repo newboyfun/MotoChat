@@ -1,14 +1,4 @@
 (function() {
-  const origFetch = window.fetch;
-  window.fetch = function(input, init) {
-    init = init || {};
-    init.headers = Object.assign({}, init.headers || {});
-    const token = localStorage.getItem('kc_token');
-    if (token && !init.headers['Authorization'] && !init.headers['authorization']) init.headers['Authorization'] = 'Bearer ' + token;
-    return origFetch(input, init);
-  };
-})();
-(function() {
   'use strict';
   const $ = (s, c) => (c||document).querySelector(s);
   const $$ = (s, c) => [...(c||document).querySelectorAll(s)];
@@ -47,12 +37,12 @@
     }
     setTimeout(hideSplash, 800);
     try {
-      const token = localStorage.getItem('kc_token');
-      if (!token) { hideSplash(); location.href='/login'; return; }
+      // 认证走 HttpOnly Cookie，直接询问后端即可
       const r = await fetch('/api/auth/me');
       if (!r.ok) { localStorage.removeItem('kc_token'); hideSplash(); location.href='/login'; return; }
       const me = await r.json();
-      if (!me || !me.username || me.role !== 'user') { localStorage.removeItem('kc_token'); hideSplash(); location.href='/login'; return; }
+      // 统一判断：非 admin 角色走 user 入口，兼容未来新增的角色
+      if (!me || !me.username || me.role === 'admin') { localStorage.removeItem('kc_token'); hideSplash(); location.href='/login'; return; }
       S.me = me;
       if (me.conversation_id) S.cid = me.conversation_id;
       hideSplash();
@@ -69,8 +59,45 @@
       }
       loadStats(); loadHistory(); refreshTokenUsage(); checkConnection(); loadUserPersonaList(); refreshAccountPage();
       window.goToPage('home');
+      initNotifyWs();
     } catch(e) { hideSplash(); location.href='/login'; }
   });
+
+  /* ===== 通知 WebSocket：消费提醒/自动消息广播 ===== */
+  let _notifyWs = null;
+  let _notifyWsRetry = 5000;
+  function initNotifyWs() {
+    try {
+      const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+      const ws = new WebSocket(proto + location.host + '/ws/chat');
+      _notifyWs = ws;
+      let pingTimer = null;
+      ws.onopen = () => {
+        _notifyWsRetry = 5000;
+        // 心跳保活，防代理/空闲断连
+        pingTimer = setInterval(() => { try { ws.send(JSON.stringify({type:'ping'})); } catch(e) {} }, 30000);
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg.type !== 'notification') return;  // 聊天走 SSE，这里只消费通知广播
+          toast(msg.title || '通知', msg.content || '', 'info');
+          const badge = document.getElementById('notifBadge');
+          if (badge) badge.style.display = 'block';
+          if (S.page === 'notifications') loadNotifications();
+          if (S.page === 'chat' || S.page === 'home') loadHistory();
+        } catch(e) {}
+      };
+      ws.onclose = (ev) => {
+        if (pingTimer) clearInterval(pingTimer);
+        _notifyWs = null;
+        if (ev.code === 4001) return;  // 未登录/已登出，不重连
+        setTimeout(initNotifyWs, _notifyWsRetry);
+        _notifyWsRetry = Math.min(_notifyWsRetry * 2, 60000);
+      };
+      ws.onerror = () => { try { ws.close(); } catch(e) {} };
+    } catch(e) { /* WebSocket 不可用时静默降级，通知仍可在通知页手动查看 */ }
+  }
 
   function bindTheme() {
     const btn = document.getElementById('themeToggle');
@@ -114,14 +141,17 @@
     const avatar = document.getElementById('personaAvatar');
     const displayName = document.getElementById('personaDisplayName');
     const welcome = document.getElementById('personaWelcome');
-    if (avatar) avatar.textContent = name ? name.charAt(0).toUpperCase() : 'U';
+    if (avatar && window.MotoAvatars) MotoAvatars.apply(avatar, name);
+    else if (avatar) avatar.textContent = name ? name.charAt(0).toUpperCase() : 'U';
     if (displayName) displayName.textContent = name || '角色';
     if (welcome) welcome.textContent = name ? ('你好，我是 ' + name + '，来聊天吧。') : '';
   }
 
   function syncChatHeaderFromPersona(name) {
-    const first = name ? name.charAt(0).toUpperCase() : 'U';
-    ['chatAvatar','welcomeAvatar','miniAvatar'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = first; });
+    // 头像图片化：welcomeAvatar 已改为插画，不再设置
+    if (window.MotoAvatars) {
+      ['chatAvatar','miniAvatar'].forEach(id => MotoAvatars.apply(document.getElementById(id), name));
+    }
     ['chatName','welcomeName','miniName'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = name || ''; });
   }
 
@@ -133,7 +163,7 @@
       if (!el) return;
       const personas = d.personas || [];
       S.currentPersona = d.current || S.currentPersona;
-      el.innerHTML = personas.map(p => '<button class="btn" data-name="' + p.name + '" style="border-color:' + (p.active ? 'var(--accent)' : 'var(--border)') + ';color:' + (p.active ? 'var(--accent)' : 'inherit') + '">' + escapeHtml(p.name) + '</button>').join('');
+      el.innerHTML = personas.map(p => '<button class="btn" data-name="' + escapeHtml(p.name) + '" style="border-color:' + (p.active ? 'var(--accent)' : 'var(--border)') + ';color:' + (p.active ? 'var(--accent)' : 'inherit') + '">' + escapeHtml(p.name) + '</button>').join('');
       el.querySelectorAll('button[data-name]').forEach(btn => btn.addEventListener('click', () => selectUserPersona(btn.dataset.name)));
       if (S.currentPersona) { updatePersonaHeader(S.currentPersona); syncChatHeaderFromPersona(S.currentPersona); loadUserPersonaDetail(S.currentPersona); loadPersonaPreview(S.currentPersona); }
       // Check for pending overrides and show badge
@@ -294,32 +324,72 @@
     const container = $('#chatMessages');
     if (container) {
       const div=document.createElement('div'); div.className='msg assistant';
-      div.innerHTML='<div class="msg-avatar">'+getAvatarChar()+'</div><div class="msg-body"><div class="msg-bubble typing-indicator"><span></span><span></span><span></span></div></div>';
+      const avatarHtml = window.MotoAvatars ? MotoAvatars.img(_personaName()) : getAvatarChar();
+      div.innerHTML='<div class="msg-avatar has-img">'+avatarHtml+'</div><div class="msg-body"><div class="msg-bubble typing-indicator"><span></span><span></span><span></span></div></div>';
       container.appendChild(div); S.currentBubble=div; scrollChat();
+    }
+    // SSE 批量渲染：50ms 节流写 DOM，避免每 token 重建 innerHTML 引发 reflow
+    let _renderTimer = null, _renderDirty = false;
+    function _scheduleRender() {
+      _renderDirty = true;
+      if (_renderTimer) return;
+      _renderTimer = setTimeout(() => {
+        _renderTimer = null;
+        if (!_renderDirty) return;
+        _renderDirty = false;
+        if (S.currentBubble) {
+          const bubble = S.currentBubble.querySelector('.msg-bubble');
+          if (bubble) { bubble.classList.remove('typing-indicator'); bubble.innerHTML = renderEmotions(escapeHtml(S.fullReply)); }
+        }
+        scrollChat();
+      }, 50);
+    }
+    function _flushRender() {
+      if (_renderTimer) { clearTimeout(_renderTimer); _renderTimer = null; }
+      if (_renderDirty) {
+        _renderDirty = false;
+        if (S.currentBubble) {
+          const bubble = S.currentBubble.querySelector('.msg-bubble');
+          if (bubble) { bubble.classList.remove('typing-indicator'); bubble.innerHTML = renderEmotions(escapeHtml(S.fullReply)); }
+        }
+        scrollChat();
+      }
     }
     try {
       const response = await fetch('/api/chat/stream', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:text, conversation_id:S.cid})});
-      const reader=response.body.getReader(); const decoder=new TextDecoder(); let buffer='';
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '未知错误');
+        let errMsg = '服务器错误 (' + response.status + ')';
+        try { const ej = JSON.parse(errText); errMsg = ej.error || ej.message || errMsg; } catch(e) {}
+        if (S.currentBubble) { const bubble=S.currentBubble.querySelector('.msg-bubble'); if (bubble) bubble.innerHTML='❌'+escapeHtml(errMsg); }
+        S.streaming=false;
+        const btn=$('#sendBtn'); if (btn) btn.disabled=false;
+        return;
+      }
+      const reader=response.body.getReader(); const decoder=new TextDecoder(); let buffer=''; let eventType='';
       while (true) {
         const {done,value}=await reader.read(); if (done) break;
-        buffer+=decoder.decode(value,{stream:true}); const lines=buffer.split('\n'); buffer=lines.pop(); let eventType='';
+        buffer+=decoder.decode(value,{stream:true}); const lines=buffer.split('\n'); buffer=lines.pop();
         for (const line of lines) {
           if (line.startsWith('event: ')) eventType=line.substring(7).trim();
           else if (line.startsWith('data: ')) {
             const rawData=line.substring(6);
             try {
               const data=JSON.parse(rawData);
-              if (eventType==='chunk' && data.text) { S.fullReply+=data.text; if (S.currentBubble) { const bubble=S.currentBubble.querySelector('.msg-bubble'); if (bubble) { bubble.classList.remove('typing-indicator'); bubble.innerHTML=renderEmotions(escapeHtml(S.fullReply)); } } scrollChat(); }
+              if (eventType==='chunk' && data.text) { S.fullReply+=data.text; _scheduleRender(); }
               else if (eventType==='end') finishReply();
               else if (eventType==='error') { if (S.currentBubble) { const bubble=S.currentBubble.querySelector('.msg-bubble'); if (bubble) bubble.innerHTML='❌'+escapeHtml(data.error||'处理出错'); } }
             } catch(e) { console.error('parse error', e, rawData); }
           }
         }
       }
+      // 确保流结束后总是调用 finishReply（防止未收到 end 事件时卡死）
+      finishReply();
     } catch(e) {
       if (S.currentBubble) { const bubble=S.currentBubble.querySelector('.msg-bubble'); if (bubble) bubble.innerHTML='❌ 连接失败: '+escapeHtml(e.message); }
       S.streaming=false;
     }
+    _flushRender();  // 流结束/出错时强制渲染最后内容
     const btn=$('#sendBtn'); if (btn) btn.disabled=false;
   }
 
@@ -337,9 +407,7 @@
         for (const part of parts) {
           const div = document.createElement('div');
           div.className = 'msg assistant';
-          const avatar = document.createElement('div');
-          avatar.className = 'msg-avatar';
-          avatar.textContent = getAvatarChar();
+          const avatar = _mkMsgAvatar('assistant');
           const body = document.createElement('div');
           body.className = 'msg-body';
           const bubble = document.createElement('div');
@@ -410,7 +478,7 @@
 
     for (const part of parts) {
       const div=document.createElement('div'); div.className='msg '+role;
-      const avatar=document.createElement('div'); avatar.className='msg-avatar'; avatar.textContent=role==='user'?'你':getAvatarChar();
+      const avatar=_mkMsgAvatar(role);
       const body=document.createElement('div'); body.className='msg-body';
       const bubble=document.createElement('div'); bubble.className='msg-bubble'; bubble.innerHTML=renderEmotions(escapeHtml(part));
       const time=document.createElement('div'); time.className='msg-time'; time.textContent=timeStr;
@@ -428,11 +496,109 @@
   function scrollChat() { const el=$('#chatMessages'); if (el) requestAnimationFrame(()=>el.scrollTop=el.scrollHeight); }
   function getAvatarChar() { const el=$('#chatAvatar'); return (el && el.textContent) || 'M'; }
 
-  async function loadHistory() {
+  /* 当前角色名（头像图片用） */
+  function _personaName() { return S.currentPersona || ($('#chatName') && $('#chatName').textContent.trim()) || 'MONO'; }
+
+  /* 创建消息头像元素：用户用「你」，角色用 AI 生成头像图片 */
+  function _mkMsgAvatar(role) {
+    const avatar = document.createElement('div');
+    avatar.className = 'msg-avatar';
+    if (role === 'user') {
+      avatar.textContent = '你';
+    } else if (window.MotoAvatars) {
+      MotoAvatars.apply(avatar, _personaName());
+    } else {
+      avatar.textContent = _personaName().charAt(0).toUpperCase();
+    }
+    return avatar;
+  }
+
+  let _historyOffset = 0;
+  let _historyHasMore = false;
+  let _loadingOlder = false;
+
+  async function loadHistory(append) {
     try {
-      const r=await fetch('/api/history/'+encodeURIComponent(S.cid)); const d=await r.json(); const msgs=d.messages||[]; if (!msgs.length) return;
-      removeWelcome(); const container=$('#chatMessages'); if (!container) return; container.innerHTML=''; msgs.forEach(m=>addMsg(m.role, m.content, m.created_at));
+      const offset = append ? _historyOffset : 0;
+      const r = await fetch('/api/history/' + encodeURIComponent(S.cid) + '?limit=200&offset=' + offset);
+      const d = await r.json();
+      const msgs = d.messages || [];
+      // 后端 /api/history 返回的是 {messages, has_more, next_offset}，没有 total 字段
+      _historyHasMore = !!d.has_more;
+      if (!msgs.length && !append) return;
+      if (!append) removeWelcome();
+      const container = $('#chatMessages');
+      if (!container) return;
+      if (!append) container.innerHTML = '';
+      if (append) {
+        const prevHeight = container.scrollHeight;
+        const frag = document.createDocumentFragment();
+        msgs.forEach(m => {
+          const el = _buildMsgEl(m.role, m.content, m.created_at);
+          if (el) frag.appendChild(el);
+        });
+        container.insertBefore(frag, container.firstChild);
+        container.scrollTop = container.scrollHeight - prevHeight;
+      } else {
+        msgs.forEach(m => addMsg(m.role, m.content, m.created_at));
+        setTimeout(() => scrollChat(), 100);
+      }
+      _historyOffset = (typeof d.next_offset === 'number' && d.next_offset > 0)
+        ? d.next_offset
+        : offset + msgs.length;
+      if (!append) _bindScrollLoad();
     } catch(e) { console.error('loadHistory error', e); }
+  }
+
+  function _bindScrollLoad() {
+    const container = $('#chatMessages');
+    if (!container || container._scrollBound) return;
+    container._scrollBound = true;
+    container.addEventListener('scroll', function() {
+      if (container.scrollTop < 60 && !_loadingOlder && _historyHasMore) {
+        _loadingOlder = true;
+        loadHistory(true).finally(() => { _loadingOlder = false; });
+      }
+    });
+  }
+
+  function _buildMsgEl(role, content, createdAt) {
+    if (!content) return null;
+    const parts = content.split('[SPLIT]').map(p => p.trim()).filter(p => p.length > 0);
+    if (!parts.length) parts.push('');
+    const timeStr = createdAt
+      ? new Date(createdAt).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'})
+      : new Date().toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+    const frag = document.createDocumentFragment();
+    for (const part of parts) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + role;
+      const avatar = _mkMsgAvatar(role);
+      const body = document.createElement('div');
+      body.className = 'msg-body';
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+      bubble.innerHTML = renderEmotions(escapeHtml(part));
+      body.appendChild(bubble);
+      // 所有消息都添加时间戳
+      const time = document.createElement('div');
+      time.className = 'msg-time';
+      time.textContent = timeStr;
+      body.appendChild(time);
+      // assistant 消息添加 TTS 按钮
+      if (role === 'assistant') {
+        const tts = document.createElement('button');
+        tts.className = 'msg-tts';
+        tts.textContent = '🔊';
+        tts.title = '朗读';
+        tts.onclick = () => playTTS(part);
+        body.appendChild(tts);
+      }
+      div.appendChild(avatar);
+      div.appendChild(body);
+      frag.appendChild(div);
+    }
+    return frag;
   }
 
   async function loadStats() {
@@ -446,10 +612,9 @@
         const el = document.getElementById(id);
         if (el) el.textContent = persona || '-';
       });
-      const first = (persona || 'U').charAt(0).toUpperCase();
-      ['miniAvatar','personaAvatar','welcomeAvatar','homeAvatar','accountAvatar'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = first;
+      // 头像图片化：角色相关头像替换为 AI 生成图片（accountAvatar 代表真人用户，保留字母）
+      ['miniAvatar','personaAvatar','homeAvatar'].forEach(id => {
+        if (window.MotoAvatars) MotoAvatars.apply(document.getElementById(id), persona);
       });
       updatePersonaHeader(persona);
       syncChatHeaderFromPersona(persona);
@@ -468,23 +633,41 @@
       const d = await r.json();
       const u = d.usage || {};
       const chatEl = document.getElementById('chatTokenDisplay');
-      if (chatEl) chatEl.textContent = u.total_tokens || '-';
+      if (chatEl) chatEl.textContent = u.total_tokens ? u.total_tokens.toLocaleString() : '-';
       const homeEl = document.getElementById('homeTokenUsage');
-      if (homeEl) homeEl.textContent = u.total_tokens || '-';
+      if (homeEl) homeEl.textContent = u.total_tokens ? u.total_tokens.toLocaleString() : '-';
+      // 显示详细信息
+      const detailEl = document.getElementById('tokenUsageDetail');
+      if (detailEl && u.total_tokens > 0) {
+        detailEl.innerHTML = `累计 ${u.request_count || 0} 次请求`;
+      }
     } catch(e) {}
   }
 
+  let _connTimer = null;
   async function checkConnection() {
     try { const r=await fetch('/api/user/home-stats',{signal:AbortSignal.timeout(3000)}); updateStatus(r.ok); } catch(e) { updateStatus(false); }
-    setTimeout(checkConnection,10000);
+    if (!document.hidden) { _connTimer = setTimeout(checkConnection,10000); }
   }
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) { if (_connTimer) { clearTimeout(_connTimer); _connTimer = null; } }
+    else { if (!_connTimer) checkConnection(); }
+  });
   function updateStatus(ok) {
     const el=document.getElementById('wsStatus'); if (!el) return; el.textContent=ok?'● 已连接':'● 未连接'; el.style.color=ok?'var(--green)':'var(--red)';
   }
 
   async function playTTS(text) {
     if (!text) return;
-    try { const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})}); const d=await r.json(); if (d.audio_url) new Audio(d.audio_url).play(); } catch(e) { console.error('TTS error', e); }
+    try {
+      const r = await fetch('/api/tts', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({text})});
+      if (!r.ok) { const d = await r.json().catch(()=>({})); toast('TTS', d.error || '语音合成失败', 'error'); return; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      audio.play();
+    } catch(e) { console.error('TTS error', e); toast('TTS', '语音合成失败', 'error'); }
   }
 
   function toast(t,m,tp) {
@@ -496,8 +679,16 @@
   // Page navigation binding
   $$('.nav-btn[data-page]').forEach(btn => btn.addEventListener('click', () => window.goToPage(btn.dataset.page)));
 
-  function escapeHtml(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
-  function renderEmotions(text) { return text ? text.replace(/\n/g,'<br>') : ''; }
+  function escapeHtml(s) { return s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') : ''; }
+  /* 表情标签剥离：后端 prompt 要求模型输出 [happy]/[sad] 等标签，
+     这里统一隐藏，避免标签原样出现在气泡里（也能清理历史数据里已存的标签）。
+     后端标签全部为 3-12 个小写 ASCII 字母，故用等价模式统一匹配，
+     无需与 src/app/services/emoji.py 的 65 个标签名重复维护。 */
+  var EMOTION_TAG_RE = /\[[a-z]{3,12}\]/g;
+  function renderEmotions(text) {
+    if (!text) return '';
+    return text.replace(EMOTION_TAG_RE, '').replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n/g, '<br>');
+  }
 
   async function loadHome() {
     try {
@@ -523,12 +714,19 @@
       if (d.access_denied) { grid.innerHTML = '<div style="color:var(--text-muted)">还没有访问性格库的权限，请联系管理员开通。</div>'; return; }
       const items = d.library || [];
       if (!items.length) { grid.innerHTML = '<div style="color:var(--text-muted)">暂无可用模板。</div>'; return; }
-      grid.innerHTML = items.map(item =>
-        '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;cursor:pointer" onclick="applyLibraryItem(\'' + escapeHtml(item.name).replace(/'/g, "\'") + '\')">'
+      grid.innerHTML = items.map((item, idx) =>
+        '<div data-lib-idx="' + idx + '" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;cursor:pointer">'
         + '<div style="font-weight:700;margin-bottom:6px">' + escapeHtml(item.name) + (item.persona_name ? ' <span style="color:var(--text-muted);font-size:12px">(' + escapeHtml(item.persona_name) + ')</span>' : '') + '</div>'
         + '<div style="font-size:13px;color:var(--text-muted);line-height:1.7;max-height:72px;overflow:hidden">' + escapeHtml(item.content || '') + '</div>'
         + '</div>'
       ).join('');
+      // 使用事件委托避免 XSS 注入风险
+      grid.querySelectorAll('[data-lib-idx]').forEach(el => {
+        el.addEventListener('click', function() {
+          const i = parseInt(this.dataset.libIdx, 10);
+          if (items[i]) applyLibraryItem(items[i].name);
+        });
+      });
     } catch (e) { grid.innerHTML = '<div style="color:var(--red)">加载失败</div>'; }
   }
 
@@ -538,7 +736,7 @@
     el.innerHTML = '<div style="color:var(--text-muted)">\u52a0\u8f7d\u4e2d...</div>';
     try {
       const [notifRes, pendingRes] = await Promise.all([
-        fetch('/api/notifications/' + encodeURIComponent(S.cid)),
+        fetch('/api/conversations/notifications/' + encodeURIComponent(S.cid)),
         fetch('/api/user/pending-overrides')
       ]);
       const nd = await notifRes.json();
@@ -546,14 +744,16 @@
       const items = nd.notifications || [];
       const pending = pd.pending || {};
       let html = '';
+      let pendingIdx = 0;
       for (const [persona, content] of Object.entries(pending)) {
-        html += '<div style="padding:16px;background:var(--surface);border:2px solid var(--accent);border-radius:12px;margin-bottom:10px">'
+        html += '<div data-pending-idx="' + pendingIdx + '" style="padding:16px;background:var(--surface);border:2px solid var(--accent);border-radius:12px;margin-bottom:10px">'
           + '<div style="margin-bottom:8px"><span style="font-weight:700;color:var(--accent)">\ud83d\udd14 \u5f85\u5ba1\u6279\uff1a\u7ba1\u7406\u5458\u66f4\u65b0\u4e86\u89d2\u8272 ' + escapeHtml(persona) + ' \u7684\u8bbe\u5b9a</span></div>'
           + '<div style="font-size:13px;color:var(--text-muted);line-height:1.7;margin-bottom:10px;max-height:120px;overflow:auto;background:var(--bg);border-radius:8px;padding:10px">' + escapeHtml(content || '(\u7a7a\u5185\u5bb9)') + '</div>'
           + '<div style="display:flex;gap:8px">'
-          + '<button class="btn btn-primary" onclick="approveOverride(\'' + escapeHtml(persona).replace(/'/g, "\\'") + '\', true)">\u540c\u610f\u5e94\u7528</button>'
-          + '<button class="btn" style="color:var(--red)" onclick="approveOverride(\'' + escapeHtml(persona).replace(/'/g, "\\'") + '\', false)">\u62d2\u7edd</button>'
+          + '<button class="btn btn-primary" data-approve="true">\u540c\u610f\u5e94\u7528</button>'
+          + '<button class="btn" style="color:var(--red)" data-approve="false">\u62d2\u7edd</button>'
           + '</div></div>';
+        pendingIdx++;
       }
       for (const n of items) {
         html += '<div style="padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:10px">'
@@ -563,6 +763,17 @@
       }
       if (!html) { el.innerHTML = '<div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;color:var(--text-muted)">\u6682\u65f6\u6ca1\u6709\u901a\u77e5\u3002</div>'; return; }
       el.innerHTML = html;
+      // 使用事件委托绑定 approveOverride，避免 onclick 中的 XSS 注入风险
+      const pendingEntries = Object.entries(pending);
+      el.querySelectorAll('[data-pending-idx]').forEach(div => {
+        const idx = parseInt(div.dataset.pendingIdx, 10);
+        const personaName = pendingEntries[idx] ? pendingEntries[idx][0] : '';
+        div.querySelectorAll('[data-approve]').forEach(btn => {
+          btn.addEventListener('click', function() {
+            approveOverride(personaName, this.dataset.approve === 'true');
+          });
+        });
+      });
     } catch (e) { el.innerHTML = '<div style="color:var(--red)">\u52a0\u8f7d\u901a\u77e5\u5931\u8d25</div>'; }
   }
 
@@ -604,7 +815,79 @@
     } catch (e) { console.error('refreshAccountPage error', e); }
     const todayEl = document.getElementById('accountTodayChats');
     if (todayEl) todayEl.textContent = '-';
+    // 加载 API 配置
+    loadUserApiConfig();
   }
+
+  async function loadUserApiConfig() {
+    try {
+      const r = await fetch('/api/user/api-config');
+      if (r.ok) {
+        const d = await r.json();
+        const apiKeyEl = document.getElementById('userApiKey');
+        const baseUrlEl = document.getElementById('userBaseUrl');
+        const modelEl = document.getElementById('userModel');
+        const statusEl = document.getElementById('apiConfigStatus');
+        // 掩码只作 placeholder，避免保存时把掩码当新 key 回写；留空 = 保留原 key
+        if (apiKeyEl) { apiKeyEl.value = ''; apiKeyEl.placeholder = d.has_custom_api ? (d.api_key || '已配置，留空则保留') : '未配置'; }
+        if (baseUrlEl) baseUrlEl.value = d.base_url || '';
+        if (modelEl) modelEl.value = d.model || '';
+        if (statusEl) {
+          if (d.has_custom_api) {
+            statusEl.textContent = '已配置';
+            statusEl.style.background = 'var(--green-soft, rgba(34,197,94,0.1))';
+            statusEl.style.color = 'var(--green, #22c55e)';
+          } else {
+            statusEl.textContent = '未配置';
+            statusEl.style.background = 'var(--bg)';
+            statusEl.style.color = 'var(--text-muted)';
+          }
+        }
+      }
+    } catch (e) { console.error('loadUserApiConfig error', e); }
+  }
+
+  window.saveUserApiConfig = async function() {
+    const apiKeyEl = document.getElementById('userApiKey');
+    const baseUrlEl = document.getElementById('userBaseUrl');
+    const modelEl = document.getElementById('userModel');
+    let apiKey = apiKeyEl?.value?.trim() || '';
+    const baseUrl = baseUrlEl?.value?.trim() || '';
+    const model = modelEl?.value?.trim() || '';
+    // 掩码值视为未修改，置空发送（后端留空 = 保留原 key，允许只改 base_url/model）
+    if (apiKey.includes('•') || apiKey.includes('***')) apiKey = '';
+    try {
+      const r = await fetch('/api/user/api-config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({api_key: apiKey, base_url: baseUrl, model: model})
+      });
+      const d = await r.json();
+      if (r.ok && d.success) {
+        toast('成功', 'API 配置已保存', 'success');
+        loadUserApiConfig();
+      } else {
+        toast('错误', d.error || '保存失败', 'error');
+      }
+    } catch (e) { toast('错误', '网络异常', 'error'); }
+  };
+
+  window.clearUserApiConfig = async function() {
+    try {
+      const r = await fetch('/api/user/api-config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({api_key: '', base_url: '', model: ''})
+      });
+      const d = await r.json();
+      if (r.ok && d.success) {
+        toast('成功', '已恢复默认 API 配置', 'success');
+        loadUserApiConfig();
+      } else {
+        toast('错误', d.error || '操作失败', 'error');
+      }
+    } catch (e) { toast('错误', '网络异常', 'error'); }
+  };
 
   window.doChangePassword = async function() {
     const oldPassword = (document.getElementById('oldPassword')?.value || '').trim();
@@ -633,12 +916,19 @@
       if (d.access_denied) { list.innerHTML = '<p style="color:var(--text-muted)">你还没有访问性格库的权限，请联系管理员开通。</p>'; return; }
       const items = d.library || [];
       if (!items.length) { list.innerHTML = '<p style="color:var(--text-muted)">暂无可用的管理员模板</p>'; return; }
-      list.innerHTML = items.map(item =>
-        '<div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;cursor:pointer" onclick="applyLibraryItem(\''+escapeHtml(item.name)+'\')">'
+      list.innerHTML = items.map((item, idx) =>
+        '<div data-lib-idx="'+idx+'" style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;cursor:pointer">'
         +'<div style="font-weight:600">'+escapeHtml(item.name)+(item.persona_name?' <span style="color:var(--text-muted);font-size:12px">('+escapeHtml(item.persona_name)+')</span>':'')+'</div>'
         +'<div style="font-size:13px;color:var(--text-muted);margin-top:4px;max-height:60px;overflow:hidden">'+escapeHtml(item.content||'')+'</div>'
         +'</div>'
       ).join('');
+      // 事件委托：点击性格模板应用到当前角色
+      list.querySelectorAll('[data-lib-idx]').forEach(el => {
+        el.addEventListener('click', function() {
+          const i = parseInt(this.dataset.libIdx, 10);
+          if (items[i]) applyLibraryItem(items[i].name);
+        });
+      });
     } catch(e) { list.innerHTML = '<p style="color:var(--red)">加载失败</p>'; }
   };
   window.closeLibraryPicker = function() { document.getElementById('libraryPickerModal').style.display = 'none'; };

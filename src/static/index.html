@@ -4,15 +4,35 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <title>MotoChat Admin v13</title>
-  <link rel="stylesheet" href="/static/style.css?v=7">
+  <title>MotoChat Admin v1</title>
+  <!-- Distinctive fonts: DM Sans for display, Inter for body -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v=5">
   <script src="/static/theme.js"></script>
+  <script src="/static/auth.js?v=2"></script>
+  <script src="/static/avatar.js?v=2"></script>
 
 <style>
 .trait-tag { border: 2px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 13px; cursor: pointer; transition: all 0.2s; background: var(--bg); }
 .trait-tag:hover { border-color: var(--accent); }
 .trait-tag.selected { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 </style>
+
+<!-- Warm icon gradient definitions -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="warmGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97853"/>
+      <stop offset="100%" stop-color="#fbb040"/>
+    </linearGradient>
+    <linearGradient id="warmGradSoft" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f97853" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#fbb040" stop-opacity="0.85"/>
+    </linearGradient>
+  </defs>
+</svg>
 
 </head>
 <body>
@@ -22,12 +42,10 @@
       <div class="splash-content">
         <div class="splash-logo">
           <div class="splash-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2a4 4 0 014 4c0 2.2-1.8 4-4 4m0 0a4 4 0 01-4-4c0-2.2 1.8-4 4-4m0 0v2m0 2v12m-4-2l4 2 4-2"/>
-              <circle cx="12" cy="6" r="1.5"/>
-              <circle cx="10" cy="17" r="1" opacity="0.6"/>
-              <circle cx="14" cy="17" r="1" opacity="0.6"/>
-              <circle cx="12" cy="20" r="1" opacity="0.3"/>
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3C9.5 3 7.5 5 7.5 7.5c0 1.8 1 3.3 2.5 4v1.5l-2 3.5c-.3.5 0 1.1.6 1.2l3.4.8 3.4-.8c.6-.1.9-.7.6-1.2l-2-3.5V11.5c1.5-.7 2.5-2.2 2.5-4C16.5 5 14.5 3 12 3z" fill="rgba(255,255,255,0.2)" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="12" cy="7.5" r="2" fill="currentColor" opacity="0.9"/>
+              <path d="M9 19.5c.8.6 1.8 1 3 1s2.2-.4 3-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/>
             </svg>
           </div>
           <h1>MotoChat</h1>
@@ -38,77 +56,51 @@
       </div>
     </div>
 
-    <!-- Auth -->
-    <div class="auth-wrapper" id="authView" style="display:none">
-      <div class="auth-card">
-        <div class="auth-brand">
-          <div class="brand-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2a4 4 0 014 4c0 2.2-1.8 4-4 4m0 0a4 4 0 01-4-4c0-2.2 1.8-4 4-4m0 0v2m0 2v12m-4-2l4 2 4-2"/>
-              <circle cx="12" cy="6" r="1.5"/>
-              <circle cx="10" cy="17" r="1" opacity="0.6"/>
-              <circle cx="14" cy="17" r="1" opacity="0.6"/>
-              <circle cx="12" cy="20" r="1" opacity="0.3"/>
-            </svg>
-          </div>
-          <h2>MotoChat</h2>
-          <p>登录后继续使用</p>
-          <div style="margin-top:8px;font-size:12px"><a href="/user" style="color:var(--accent)">普通用户入口</a></div>
-        </div>
-        <div class="form-group"><label>账号</label><input id="authUser" class="form-input" placeholder="请输入账号"></div>
-        <div class="form-group"><label>密码</label><input id="authPass" type="password" class="form-input" placeholder="请输入密码"></div>
-        <div class="auth-actions"><a class="btn btn-primary" href="/login">去登录</a></div>
-        <div id="authError" class="cfg-status error" style="margin-top:8px"></div>
-      </div>
-    </div>
-
     <!-- Main Layout -->
     <div class="layout" id="layout" style="display:none">
       <!-- Sidebar -->
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-brand">
           <div class="brand-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2a4 4 0 014 4c0 2.2-1.8 4-4 4m0 0a4 4 0 01-4-4c0-2.2 1.8-4 4-4m0 0v2m0 2v12m-4-2l4 2 4-2"/>
-              <circle cx="12" cy="6" r="1.5"/>
-              <circle cx="10" cy="17" r="1" opacity="0.6"/>
-              <circle cx="14" cy="17" r="1" opacity="0.6"/>
-              <circle cx="12" cy="20" r="1" opacity="0.3"/>
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3C9.5 3 7.5 5 7.5 7.5c0 1.8 1 3.3 2.5 4v1.5l-2 3.5c-.3.5 0 1.1.6 1.2l3.4.8 3.4-.8c.6-.1.9-.7.6-1.2l-2-3.5V11.5c1.5-.7 2.5-2.2 2.5-4C16.5 5 14.5 3 12 3z" fill="rgba(255,255,255,0.2)" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="12" cy="7.5" r="2" fill="currentColor" opacity="0.9"/>
+              <path d="M9 19.5c.8.6 1.8 1 3 1s2.2-.4 3-1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/>
             </svg>
           </div>
           <span class="brand-name">MotoChat</span>
         </div>
         <nav class="nav">
           <button class="nav-btn active" data-page="dashboard">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="8" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="3" y="15" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="8" rx="1.5"/></svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><rect x="3" y="3" width="8" height="9" rx="2.5" fill="url(#warmGrad)" opacity="0.2"/><rect x="3" y="3" width="8" height="9" rx="2.5" stroke="url(#warmGrad)" stroke-width="1.6"/><rect x="14" y="3" width="7" height="5.5" rx="2.5" stroke="url(#warmGrad)" stroke-width="1.6"/><rect x="3" y="15.5" width="8" height="5.5" rx="2.5" stroke="url(#warmGrad)" stroke-width="1.6"/><rect x="14" y="12" width="7" height="9" rx="2.5" fill="url(#warmGrad)" opacity="0.2"/><rect x="14" y="12" width="7" height="9" rx="2.5" stroke="url(#warmGrad)" stroke-width="1.6"/></svg>
             控制台
           </button>
           <button class="nav-btn" data-page="chat">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.4-4.03 8-9 8a9.86 9.86 0 01-4.26-1.08L3 20l1.4-3.7A7.97 7.97 0 013 12c0-4.4 4.03-8 9-8s9 3.6 9 8z"/></svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M21 12c0 4.4-4.03 8-9 8a9.86 9.86 0 01-4.26-1.08L3 20l1.4-3.7A7.97 7.97 0 013 12c0-4.4 4.03-8 9-8s9 3.6 9 8z" fill="url(#warmGrad)" opacity="0.15"/><path d="M21 12c0 4.4-4.03 8-9 8a9.86 9.86 0 01-4.26-1.08L3 20l1.4-3.7A7.97 7.97 0 013 12c0-4.4 4.03-8 9-8s9 3.6 9 8z" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8.5" cy="12" r="1.1" fill="url(#warmGrad)"/><circle cx="12" cy="12" r="1.1" fill="url(#warmGrad)"/><circle cx="15.5" cy="12" r="1.1" fill="url(#warmGrad)"/></svg>
             对话
           </button>
           <button class="nav-btn" data-page="personas">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="4"/><path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="18" cy="8" r="3"/><path d="M14 20c0-2.5 1.8-4.5 3.5-5.5"/></svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><circle cx="9" cy="7" r="3.5" fill="url(#warmGrad)" opacity="0.15"/><circle cx="9" cy="7" r="3.5" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M2.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/><circle cx="17.5" cy="9" r="2.5" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M15 20c0-2.2 1.2-4 3-5" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/></svg>
             角色管理
           </button>
           <button class="nav-btn" data-page="users">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5" r="3"/><path d="M1 18c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="7" r="2.5"/><path d="M13 18c0-2 1.5-3.5 3-4.5"/><circle cx="19" cy="5" r="1.5"/><path d="M21 15l-5-2.5V9"/></svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><circle cx="8" cy="6" r="3" fill="url(#warmGrad)" opacity="0.15"/><circle cx="8" cy="6" r="3" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M2 19c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/><circle cx="17" cy="8" r="2.2" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M14.5 19c0-1.8 1-3.3 2.5-4.2" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/><path d="M19 14l2 1.5M21 15.5l-1.5 2" stroke="url(#warmGrad)" stroke-width="1.4" stroke-linecap="round" opacity="0.5"/></svg>
             用户管理
           </button>
           <button class="nav-btn" data-page="library">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 016.5 2H19a1 1 0 011 1v18a1 1 0 01-1 1H6.5A2.5 2.5 0 014 19.5z"/><path d="M12 6v12"/><path d="M8 8h4"/><path d="M8 11h4"/><path d="M8 14h3"/></svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M4 19.5v-15A2.5 2.5 0 016.5 2H19a1 1 0 011 1v18a1 1 0 01-1 1H6.5A2.5 2.5 0 014 19.5z" fill="url(#warmGrad)" opacity="0.12"/><path d="M4 19.5v-15A2.5 2.5 0 016.5 2H19a1 1 0 011 1v18a1 1 0 01-1 1H6.5A2.5 2.5 0 014 19.5z" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 6v11" stroke="url(#warmGrad)" stroke-width="1.4" stroke-linecap="round" opacity="0.7"/><path d="M8.5 8.5h3M8.5 11.5h3M8.5 14.5h2" stroke="url(#warmGrad)" stroke-width="1.4" stroke-linecap="round" opacity="0.6"/></svg>
             性格库
           </button>
           <button class="nav-btn" data-page="commands">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/><polyline points="8 8 12 11 8 14"/></svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><rect x="2.5" y="3.5" width="19" height="13.5" rx="2.5" fill="url(#warmGrad)" opacity="0.12"/><rect x="2.5" y="3.5" width="19" height="13.5" rx="2.5" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M8 21h8M12 17v4" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/><path d="M7.5 8.5l3 2.5-3 2.5" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 13.5h4" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" opacity="0.6"/></svg>
             指令中心
           </button>
           <button class="nav-btn" data-page="logs">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" fill="url(#warmGrad)" opacity="0.12"/><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2v6h6" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M8.5 13h7M8.5 16.5h5" stroke="url(#warmGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/></svg>
             系统日志
           </button>
           <button class="nav-btn" data-page="settings">
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><circle cx="12" cy="12" r="3.2" fill="url(#warmGrad)" opacity="0.2"/><circle cx="12" cy="12" r="3.2" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M12 2v2.5M12 19.5V22M4.93 4.93l1.77 1.77M17.3 17.3l1.77 1.77M2 12h2.5M19.5 12H22M4.93 19.07l1.77-1.77M17.3 6.7l1.77-1.77" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/></svg>
             设置
           </button>
         </nav>
@@ -122,7 +114,7 @@
           </div>
         </div>
         <div class="sidebar-close-btn" id="sidebarCloseBtn" style="display:none">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none"><line x1="18" y1="6" x2="6" y2="18" stroke="url(#warmGrad)" stroke-width="2" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="url(#warmGrad)" stroke-width="2" stroke-linecap="round"/></svg>
         </div>
       </aside>
       <div class="sidebar-overlay" id="sidebarOverlay"></div>
@@ -132,14 +124,14 @@
         <header class="topbar">
           <div class="topbar-left">
             <button class="btn-icon" id="menuBtn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M4 7h16M4 12h12M4 17h8" stroke="url(#warmGrad)" stroke-width="2" stroke-linecap="round"/></svg>
             </button>
             <h2 id="pageTitle">控制台</h2>
           </div>
           <div class="topbar-right">
             <button class="theme-toggle" id="themeToggle" title="切换主题" aria-label="切换深色/浅色模式">
-              <svg id="themeIconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-              <svg id="themeIconMoon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" style="display:none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+              <svg id="themeIconSun" viewBox="0 0 24 24" fill="none" width="16" height="16"><circle cx="12" cy="12" r="4.5" fill="url(#warmGrad)" opacity="0.25"/><circle cx="12" cy="12" r="4.5" stroke="url(#warmGrad)" stroke-width="1.8"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round"/></svg>
+              <svg id="themeIconMoon" viewBox="0 0 24 24" fill="none" width="16" height="16" style="display:none"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" fill="url(#warmGrad)" opacity="0.2"/><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <span id="greeting" class="greeting-text"></span>
             <button class="btn" id="logoutBtn" style="display:none;margin-left:8px">退出</button>
@@ -153,7 +145,7 @@
             <!-- Welcome Banner -->
             <div class="welcome-banner">
               <div class="welcome-banner-top">
-                <div class="welcome-banner-avatar" style="width:56px;height:56px;font-size:24px">M</div>
+                <div class="welcome-banner-avatar" id="bannerAvatar" style="width:56px;height:56px;font-size:24px">M</div>
                 <div class="welcome-banner-info">
                   <div class="welcome-banner-title">MotoChat 控制台</div>
                   <div class="welcome-banner-sub">服务器运行中 · <span id="statUptime">00:00</span> · API <span id="statKey" style="font-weight:600">未配置</span></div>
@@ -175,6 +167,11 @@
                 <div class="stat-card">
                   <div class="stat-label">Token 用量</div>
                   <div class="stat-value" id="dashTokenTotal" style="font-size:20px">0</div>
+                  <div style="font-size:11px;opacity:0.7;margin-top:4px;">
+                    <span>输入: <span id="dashTokenPrompt">0</span></span> · 
+                    <span>输出: <span id="dashTokenCompletion">0</span></span>
+                  </div>
+                  <div id="userTokenUsage"></div>
                 </div>
                 <div class="stat-card">
                   <div class="stat-label">用户数</div>
@@ -186,32 +183,32 @@
             <!-- Quick Actions -->
             <div class="quick-action-grid">
               <button class="quick-action" onclick="goToChat()">
-                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.4-4.03 8-9 8a9.86 9.86 0 01-4.26-1.08L3 20l1.4-3.7A7.97 7.97 0 013 12c0-4.4 4.03-8 9-8s9 3.6 9 8z"/></svg></div>
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><path d="M21 12c0 4.4-4.03 8-9 8a9.86 9.86 0 01-4.26-1.08L3 20l1.4-3.7A7.97 7.97 0 013 12c0-4.4 4.03-8 9-8s9 3.6 9 8z" fill="url(#warmGrad)" opacity="0.15"/><path d="M21 12c0 4.4-4.03 8-9 8a9.86 9.86 0 01-4.26-1.08L3 20l1.4-3.7A7.97 7.97 0 013 12c0-4.4 4.03-8 9-8s9 3.6 9 8z" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8.5" cy="12" r="1.1" fill="url(#warmGrad)"/><circle cx="12" cy="12" r="1.1" fill="url(#warmGrad)"/><circle cx="15.5" cy="12" r="1.1" fill="url(#warmGrad)"/></svg></div>
                 <div class="quick-action-title">进入对话</div>
                 <div class="quick-action-desc">与AI角色聊天</div>
               </button>
               <button class="quick-action" onclick="goToPage('personas')">
-                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="6" r="4"/><path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/></svg></div>
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="9" cy="7" r="3.5" fill="url(#warmGrad)" opacity="0.15"/><circle cx="9" cy="7" r="3.5" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M2.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/></svg></div>
                 <div class="quick-action-title">角色管理</div>
                 <div class="quick-action-desc">创建与编辑角色</div>
               </button>
               <button class="quick-action" onclick="goToPage('users')">
-                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="5" r="3"/><path d="M1 18c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="7" r="2.5"/><path d="M13 18c0-2 1.5-3.5 3-4.5"/></svg></div>
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="8" cy="6" r="3" fill="url(#warmGrad)" opacity="0.15"/><circle cx="8" cy="6" r="3" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M2 19c0-3.3 2.7-6 6-6s6 2.7 6 6" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/><circle cx="17" cy="8" r="2.2" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M14.5 19c0-1.8 1-3.3 2.5-4.2" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/></svg></div>
                 <div class="quick-action-title">用户管理</div>
                 <div class="quick-action-desc">账号与权限设置</div>
               </button>
               <button class="quick-action" onclick="goToPage('commands')">
-                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><rect x="2.5" y="3.5" width="19" height="13.5" rx="2.5" fill="url(#warmGrad)" opacity="0.12"/><rect x="2.5" y="3.5" width="19" height="13.5" rx="2.5" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M8 21h8M12 17v4" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/></svg></div>
                 <div class="quick-action-title">指令中心</div>
                 <div class="quick-action-desc">快捷命令集合</div>
               </button>
               <button class="quick-action" onclick="goToPage('logs')">
-                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/></svg></div>
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" fill="url(#warmGrad)" opacity="0.12"/><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2v6h6" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M8.5 13h7M8.5 16.5h5" stroke="url(#warmGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/></svg></div>
                 <div class="quick-action-title">系统日志</div>
                 <div class="quick-action-desc">运行状态追踪</div>
               </button>
               <button class="quick-action" onclick="goToPage('settings')">
-                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div>
+                <div class="quick-action-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><circle cx="12" cy="12" r="3.2" fill="url(#warmGrad)" opacity="0.2"/><circle cx="12" cy="12" r="3.2" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M12 2v2.5M12 19.5V22M4.93 4.93l1.77 1.77M17.3 17.3l1.77 1.77M2 12h2.5M19.5 12H22M4.93 19.07l1.77-1.77M17.3 6.7l1.77-1.77" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/></svg></div>
                 <div class="quick-action-title">系统设置</div>
                 <div class="quick-action-desc">配置与参数</div>
               </button>
@@ -231,6 +228,13 @@
                   <button class="btn btn-primary" onclick="goToPage('users')" style="font-size:12px">完整管理</button>
                 </div>
                 <div id="adminUsersContainer"><div class="loading-text">加载中…</div></div>
+              </div>
+            </div>
+            <!-- Token Usage Detail -->
+            <div class="dash-card admin-only" style="margin-top:16px">
+              <h3>Token 用量详情</h3>
+              <div id="tokenUsageDetailContainer">
+                <div class="loading-text">加载中…</div>
               </div>
             </div>
           </div>
@@ -256,7 +260,7 @@
             </div>
             <div class="chat-messages" id="chatMessages">
               <div class="chat-welcome" id="msgWelcome">
-                <div class="chat-welcome-avatar" id="welcomeAvatar">M</div>
+                <img class="chat-welcome-art" src="/static/assets/empty-chat.jpg" alt="MotoChat 插画">
                 <h3>你好！我是 <span id="welcomeName">MONO</span></h3>
                 <p>有什么想聊的吗？</p>
                 <div class="chat-welcome-suggestions">
@@ -269,11 +273,11 @@
             <div class="chat-input-wrap">
               <input type="file" id="imageInput" accept="image/*" hidden>
               <button class="btn-icon attach-btn" id="attachBtn" title="发送图片">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" width="20" height="20"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
               <textarea id="msgInput" placeholder="输入消息…" rows="1"></textarea>
               <button class="btn-icon send-btn" id="sendBtn" disabled>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7l10 5-10 5V7z"/><rect x="3" y="13" width="4" height="3"/></svg>
+                <svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M22 2L11 13" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2l-7 20-4-9-9-4 20-7z" fill="url(#warmGrad)" opacity="0.15"/><path d="M22 2l-7 20-4-9-9-4 20-7z" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
               </button>
             </div>
           </div>
@@ -303,31 +307,31 @@
               <p style="color:var(--text-2);margin-bottom:16px;">点击卡片向当前会话发送指令，自动跳转到对话页查看结果。</p>
               <div class="commands-grid">
                 <div class="cmd-card" onclick="sendCommand('/help')">
-                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><path d="M9 9a3 3 0 115.12 2.12c-.6.6-1.12.88-1.12 1.88v.5"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" width="22" height="22"><circle cx="12" cy="12" r="9.5" fill="url(#warmGrad)" opacity="0.12"/><circle cx="12" cy="12" r="9.5" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-.5.5-1 .8-1 1.5v.5" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="0.8" fill="url(#warmGrad)"/></svg></div>
                   <h4>帮助</h4><p>查看可用指令列表</p>
                 </div>
                 <div class="cmd-card" onclick="sendCommand('/diary')">
-                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" fill="url(#warmGrad)" opacity="0.12"/><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 2v6h6" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M8.5 13h7M8.5 16.5h5" stroke="url(#warmGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.7"/></svg></div>
                   <h4>角色日记</h4><p>让角色写一篇日记</p>
                 </div>
                 <div class="cmd-card" onclick="sendCommand('/state')">
-                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg></div>
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" fill="url(#warmGrad)" opacity="0.15"/><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
                   <h4>角色状态</h4><p>查看角色当前状态</p>
                 </div>
                 <div class="cmd-card" onclick="sendCommand('/list')">
-                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M9 6h12M9 12h12M9 18h12" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/><circle cx="4.5" cy="6" r="1.3" fill="url(#warmGrad)"/><circle cx="4.5" cy="12" r="1.3" fill="url(#warmGrad)"/><circle cx="4.5" cy="18" r="1.3" fill="url(#warmGrad)"/></svg></div>
                   <h4>备忘录</h4><p>让角色写一份备忘录</p>
                 </div>
                 <div class="cmd-card" onclick="sendCommand('/mem')">
-                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg></div>
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" width="22" height="22"><rect x="3" y="3" width="18" height="18" rx="5" fill="url(#warmGrad)" opacity="0.12"/><rect x="3" y="3" width="18" height="18" rx="5" stroke="url(#warmGrad)" stroke-width="1.6"/><circle cx="12" cy="12" r="3.5" stroke="url(#warmGrad)" stroke-width="1.6"/><circle cx="17" cy="7" r="1" fill="url(#warmGrad)"/></svg></div>
                   <h4>查看记忆</h4><p>查看角色的核心记忆</p>
                 </div>
                 <div class="cmd-card" onclick="sendCommand('/clear')">
-                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></div>
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" width="22" height="22"><path d="M4 6h16" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" fill="url(#warmGrad)" opacity="0.1"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v5M14 11v5" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" stroke="url(#warmGrad)" stroke-width="1.6" stroke-linecap="round"/></svg></div>
                   <h4>清空核心记忆</h4><p>清空角色的核心记忆</p>
                 </div>
                 <div class="cmd-card" onclick="sendCommand('/gen_core_mem')">
-                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22" height="22"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg></div>
+                  <div class="cmd-icon"><svg viewBox="0 0 24 24" fill="none" width="22" height="22"><circle cx="12" cy="12" r="9.5" fill="url(#warmGrad)" opacity="0.12"/><circle cx="12" cy="12" r="9.5" stroke="url(#warmGrad)" stroke-width="1.6"/><path d="M12 8v8M8 12h8" stroke="url(#warmGrad)" stroke-width="1.8" stroke-linecap="round"/></svg></div>
                   <h4>生成核心记忆</h4><p>手动生成角色核心记忆</p>
                 </div>
               </div>
@@ -367,23 +371,9 @@
               <div class="setting-form">
                 <div class="form-group">
                   <label>API Key</label>
-                  <div class="key-display">
-                    <span class="key-masked" id="apiKeyMasked">未配置</span>
-                    <button class="btn btn-sm" onclick="revealApiKey()">修改</button>
-                  </div>
-                  <div id="apiKeyEdit" style="display:none;margin-top:12px">
-                    <div class="form-group">
-                      <label>输入管理密码验证</label>
-                      <div class="input-with-btn">
-                        <input type="password" id="keyVerifyPw" class="form-input" placeholder="管理密码">
-                        <button class="btn btn-sm" onclick="verifyKeyAccess()">验证</button>
-                      </div>
-                      <span id="keyVerifyStatus" class="cfg-status"></span>
-                    </div>
-                    <div id="keyInputRow" style="display:none">
-                      <div class="form-group"><label>API Key</label><div class="input-with-btn"><input type="password" id="cfgApiKey" class="form-input" placeholder="sk-..."><button class="btn btn-sm" onclick="toggleKeyVis()">显示</button></div></div>
-                      <button class="btn btn-sm" onclick="hideKeyEdit()" style="margin-top:4px">取消</button>
-                    </div>
+                  <div class="input-with-btn">
+                    <input type="password" id="cfgApiKey" class="form-input" placeholder="sk-...">
+                    <button class="btn btn-sm" onclick="toggleKeyVis()">显示</button>
                   </div>
                 </div>
                 <div class="form-group"><label>API 地址</label><input type="text" id="cfgBaseUrl" class="form-input"></div>
@@ -420,15 +410,6 @@
               </div>
             </div>
 
-            <!-- Admin Password Card -->
-            <div class="setting-card">
-              <div class="setting-title">管理密码</div>
-              <div class="setting-form">
-                <div class="form-group"><label>原密码</label><input type="password" id="oldPw" class="form-input"></div>
-                <div class="form-group"><label>新密码</label><input type="password" id="newPw" class="form-input"></div>
-                <button class="btn btn-primary" onclick="changeAdminPw()">修改密码</button>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -563,7 +544,7 @@
       </div>
     </div>
 
-  <script src="/static/app-v16.js"></script>
+  <script src="/static/app-v1.js?v=6"></script>
 
     </body>
 </html>
